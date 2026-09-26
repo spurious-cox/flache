@@ -1,4 +1,4 @@
-# Flache 1.2.2
+# Flache 1.3.0
 
 A floating dock for the applications you choose, for macOS.
 
@@ -24,8 +24,8 @@ counts as a crash, and the login agent will bring the old copy straight back.
 
 * **Click** an icon to open the application, or bring it forward if it is
   already running. Flache never takes the focus from the app you are in.
-* **Right-click** for Help, Delete, New… and the three arrangements: Grid,
-  Column and Strip.
+* **Right-click** for Help, Delete, New…, the three arrangements (Grid,
+  Column and Strip) and Hide Flache.
 * **New…** adds applications after the icon you right-clicked. Applications
   already in Flache are grayed out. You can also drag applications from the
   Finder onto Flache.

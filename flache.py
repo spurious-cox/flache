@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Flache - a floating dock for the applications you choose - v1.2.2
+"""Flache - a floating dock for the applications you choose - v1.3.0
 
 Flache (pronounced "flash") is a small panel of application icons that
 floats above every window on every Space.  A click opens the application; a
-right-click offers Help, Delete, New and the three arrangements: a
-horizontal strip, a vertical column or a square grid.  The whole panel is
+right-click offers Help, Delete, New, the three arrangements (a
+horizontal strip, a vertical column or a square grid) and Hide Flache.  The whole panel is
 shown and hidden by one system-wide chord, ⌃⌥⌘F unless another is recorded
 in Preferences, and it can be dragged anywhere; each arrangement remembers
 where it was left.
@@ -57,7 +57,7 @@ from Foundation import (
 )
 
 APP_NAME = "Flache"
-APP_VERSION = "1.2.2"
+APP_VERSION = "1.3.0"
 BUNDLE_ID = "com.timmccoy.flache"
 AGENT_PLIST = os.path.expanduser(
     "~/Library/LaunchAgents/%s.plist" % BUNDLE_ID)
@@ -842,8 +842,9 @@ HELP_SECTIONS = [
         "already running.")),
     ("Showing and hiding it", (
         "Press %(hotkey)s from anywhere to show or hide Flache, or use "
-        "the Old English F in the menu bar. The chord can be changed in "
-        "Preferences.")),
+        "the Old English F in the menu bar. Right-click Flache and choose "
+        "Hide Flache to put it away with the mouse. The chord can be "
+        "changed in Preferences.")),
     ("Always ready", (
         "The key sequence works only while Flache is running. Turn on "
         "“Open Flache at login” in Preferences and Flache starts when you "
@@ -1398,7 +1399,17 @@ class FlacheApp(NSObject):
             entry.setRepresentedObject_(layout)
             entry.setState_(1 if layout == current else 0)
             menu.addItem_(entry)
+        menu.addItem_(NSMenuItem.separatorItem())
+        hide = _item("Hide Flache", "hidePanel:", self)
+        show_chord(hide, "Hide Flache", *current_hotkey())
+        menu.addItem_(hide)
         return menu
+
+    def hidePanel_(self, sender):
+        # The panel never becomes key, so hiding it leaves focus, and the
+        # Space, exactly where they are.
+        if self.panel.isVisible():
+            self.toggle()
 
     def deleteApp_(self, sender):
         index = int(sender.tag())
