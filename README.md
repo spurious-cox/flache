@@ -1,4 +1,4 @@
-# Flache 1.3.0
+# Flache 1.4.0
 
 A floating dock for the applications you choose, for macOS.
 
@@ -36,7 +36,7 @@ counts as a crash, and the login agent will bring the old copy straight back.
 * An icon drawn **faded** is an application Flache can no longer find.
 
 The Old English F in the menu bar holds About Flache, Preferences…, Help…,
-Show/Hide Flache and Quit.
+Check for Updates…, Show/Hide Flache and Quit.
 
 ## Preferences
 

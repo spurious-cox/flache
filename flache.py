@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Flache - a floating dock for the applications you choose - v1.3.0
+"""Flache - a floating dock for the applications you choose - v1.4.0
 
 Flache (pronounced "flash") is a small panel of application icons that
 floats above every window on every Space.  A click opens the application; a
@@ -25,10 +25,13 @@ Settings live in the com.timmccoy.flache defaults domain:
     FlacheTopLeft-<layout>   where each arrangement was left, "x,y"
 """
 
+import json
 import math
 import os
+import re
 import subprocess
 import sys
+import threading
 import ctypes
 
 import objc
@@ -57,7 +60,7 @@ from Foundation import (
 )
 
 APP_NAME = "Flache"
-APP_VERSION = "1.3.0"
+APP_VERSION = "1.4.0"
 BUNDLE_ID = "com.timmccoy.flache"
 AGENT_PLIST = os.path.expanduser(
     "~/Library/LaunchAgents/%s.plist" % BUNDLE_ID)
@@ -1129,6 +1132,68 @@ def _alert(title, body):
 
 
 # ---------------------------------------------------------------------------
+# Updates
+# ---------------------------------------------------------------------------
+
+RELEASES_API = "https://api.github.com/repos/spurious-cox/flache/releases/latest"
+RELEASES_PAGE = "https://github.com/spurious-cox/flache/releases/latest"
+CASK = "spurious-cox/tap/flache"
+
+
+def latest_release():
+    """(version, page url) of the newest published release, or None when
+    GitHub cannot be reached or answers with something unexpected.
+
+    curl rather than urllib: it uses the system's certificate store, which
+    a bundled Python does not have.
+    """
+    try:
+        out = subprocess.run(
+            ["/usr/bin/curl", "-sfL", "--max-time", "10",
+             "-H", "Accept: application/vnd.github+json", RELEASES_API],
+            capture_output=True, timeout=15, check=True).stdout
+        data = json.loads(out)
+        return [str(data["tag_name"]).lstrip("v"),
+                str(data.get("html_url") or RELEASES_PAGE)]
+    except (OSError, subprocess.SubprocessError, ValueError, KeyError,
+            TypeError):
+        return None
+
+
+def version_tuple(text):
+    return tuple(int(part) for part in re.findall(r"\d+", str(text)))
+
+
+def update_alert(found):
+    """Say what the check found. Returns the page to open, or None."""
+    alert = NSAlert.alloc().init()
+    if not found:
+        alert.setMessageText_("Couldn’t check for updates")
+        alert.setInformativeText_(
+            "GitHub could not be reached. Check the network connection and "
+            "try again.")
+        alert.addButtonWithTitle_("OK")
+        alert.runModal()
+        return None
+    latest, page = found[0], found[1]
+    if version_tuple(latest) <= version_tuple(APP_VERSION):
+        alert.setMessageText_("Flache is up to date")
+        alert.setInformativeText_("You have %s, the newest version."
+                                  % APP_VERSION)
+        alert.addButtonWithTitle_("OK")
+        alert.runModal()
+        return None
+    alert.setMessageText_("Flache %s is available" % latest)
+    alert.setInformativeText_(
+        "You have %s. Quit Flache before installing the new version.\n\n"
+        "Installed with Homebrew? Run:\nbrew upgrade --cask %s"
+        % (APP_VERSION, CASK))
+    alert.addButtonWithTitle_("Open Download Page")
+    alert.addButtonWithTitle_("Later")
+    return page if alert.runModal() == 1000 else None
+
+
+# ---------------------------------------------------------------------------
 # Login item
 # ---------------------------------------------------------------------------
 
@@ -1262,6 +1327,7 @@ class FlacheApp(NSObject):
         menu.addItem_(_item("About Flache", "about:", self))
         menu.addItem_(_item("Preferences…", "showPrefs:", self))
         menu.addItem_(_item("Help…", "showHelp:", self))
+        menu.addItem_(_item("Check for Updates…", "checkUpdates:", self))
         menu.addItem_(NSMenuItem.separatorItem())
         self.toggle_item = _item("Show Flache", "toggleFromMenu:", self)
         menu.addItem_(self.toggle_item)
@@ -1504,6 +1570,22 @@ class FlacheApp(NSObject):
                 {NSFontAttributeName: NSFont.systemFontOfSize_(11),
                  NSForegroundColorAttributeName: NSColor.labelColor()}),
         })
+
+    def checkUpdates_(self, sender):
+        # The request can take seconds on a slow network; the panel stays
+        # live meanwhile.
+        threading.Thread(target=self._fetchLatest, daemon=True).start()
+
+    def _fetchLatest(self):
+        self.performSelectorOnMainThread_withObject_waitUntilDone_(
+            "showLatest:", latest_release(), False)
+
+    def showLatest_(self, found):
+        NSApp.activateIgnoringOtherApps_(True)
+        page = update_alert(found)
+        if page:
+            NSWorkspace.sharedWorkspace().openURL_(
+                NSURL.URLWithString_(page))
 
     def showPrefs_(self, sender):
         if self.prefs is None:
