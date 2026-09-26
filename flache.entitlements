@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- The standard py2app three.  Hardened runtime is mandatory for
+	     notarization and blocks things CPython does normally:
+	       allow-unsigned-executable-memory  CPython writes executable pages
+	       allow-jit                         same, for the JIT-ish paths
+	       disable-library-validation        load .so files from the bundle
+	     Flache needs nothing beyond these.  Its show/hide chord is a Carbon hot
+	     key, which the window server grants without any entitlement or TCC
+	     permission, and opening an application is unprivileged. -->
+	<key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+	<true/>
+	<key>com.apple.security.cs.allow-jit</key>
+	<true/>
+	<key>com.apple.security.cs.disable-library-validation</key>
+	<true/>
+</dict>
+</plist>

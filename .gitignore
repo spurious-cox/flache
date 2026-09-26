@@ -1,0 +1,19 @@
+venv/
+build/
+dist/
+__pycache__/
+*.pyc
+# written by the test suite
+test_*.png
+
+# built by make_icon.py and build.sh from flache.png
+icon/Flache.iconset/
+icon/Flache.icns
+icon/Flache_glyph.png
+icon/AppIcon.icon/
+
+# macOS
+.DS_Store
+
+# signed/notarized output
+*.dmg
