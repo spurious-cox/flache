@@ -20,6 +20,8 @@ counts as a crash, and the login agent will bring the old copy straight back.
 
 ![Flache as a column, a strip and a grid](docs/panels.png)
 
+*Flache as a column, a strip and a grid*
+
     ⌃⌥⌘F        show or hide Flache
 
 ## Using it
