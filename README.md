@@ -1,4 +1,4 @@
-# Flache 1.4.0
+# Flache 1.6.0
 
 A floating dock for the applications you choose, for macOS.
 
@@ -26,8 +26,9 @@ counts as a crash, and the login agent will bring the old copy straight back.
 
 * **Click** an icon to open the application, or bring it forward if it is
   already running. Flache never takes the focus from the app you are in.
-* **Right-click** for Help, Delete, New…, the three arrangements (Grid,
-  Column and Strip) and Hide Flache.
+* **Right-click** for Help, Panels, Move to, Copy to, New…, the three
+  arrangements (Grid, Column and Strip), Hide Flache and, at the bottom,
+  Delete.
 * **New…** adds applications after the icon you right-clicked. Applications
   already in Flache are grayed out. You can also drag applications from the
   Finder onto Flache.
@@ -38,7 +39,17 @@ counts as a crash, and the login agent will bring the old copy straight back.
 * An icon drawn **faded** is an application Flache can no longer find.
 
 The Old English F in the menu bar holds About Flache, Preferences…, Help…,
-Check for Updates…, Show/Hide Flache and Quit.
+Check for Updates…, Panels, Show/Hide Flache and Quit.
+
+## Panels
+
+Flache can keep several named panels — say PixPro, ArtText and Affinity —
+each with its own applications, arrangement and places. One is on screen at
+a time. Choose a name under **Panels** (right-click, or the F in the menu
+bar) to swap it in where you last left it. **New Panel…** starts an empty
+one; **Rename…** and **Delete…** act on the panel on screen. Right-click an
+icon and choose **Move to** or **Copy to** to put it in another panel. Icon
+size and the show/hide keys are shared by every panel.
 
 ## Preferences
 

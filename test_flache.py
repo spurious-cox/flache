@@ -1,4 +1,4 @@
-"""Tests for Flache - v1.2.2
+"""Tests for Flache - v1.6.0
 
     ./venv/bin/python test_flache.py
 
@@ -195,6 +195,86 @@ def test_help():
     check("help says how to pronounce it", "flash" in text)
 
 
+def test_panels():
+    """Named panels, against an in-memory stand-in for the defaults."""
+    store = {}
+    saved = F.pref, F.set_pref, F.remove_pref
+    F.pref = lambda k: store[k] if k in store else F.DEFAULTS.get(k)
+    F.set_pref = lambda k, v: store.__setitem__(k, v)
+    F.remove_pref = lambda k: store.pop(k, None)
+    try:
+        a = {"path": "/Applications/A.app", "bundle": "a"}
+        b = {"path": "/Applications/B.app", "bundle": "b"}
+        F.set_saved_apps([a, b])
+        store[F.DEF_LAYOUT] = "column"
+        store[F.DEF_TOP_LEFT + "column"] = "100,800"
+        check("the original panel is named PixPro",
+              F.panel_names() == ["PixPro"])
+        check("a lone panel cannot be deleted", not F.delete_panel("PixPro"))
+
+        check("new panel", F.add_panel("  Art   Text "))
+        check("its name is tidied", F.current_panel() == "Art Text")
+        check("it starts empty", F.saved_apps() == [])
+        check("in the same arrangement and place",
+              F.layout_pref() == "column"
+              and store.get(F.DEF_TOP_LEFT + "column") == "100,800")
+        check("names clash ignoring case", not F.add_panel("pixpro"))
+
+        F.set_saved_apps([b])
+        store[F.DEF_LAYOUT] = "grid"
+        store[F.DEF_TOP_LEFT + "grid"] = "500,500"
+        check("switch back", F.switch_panel("PixPro"))
+        check("PixPro's apps return", [x["path"] for x in F.saved_apps()]
+              == [a["path"], b["path"]])
+        check("and its arrangement", F.layout_pref() == "column")
+        check("a place it never had is cleared",
+              F.DEF_TOP_LEFT + "grid" not in store)
+        check("switching to itself does nothing", not F.switch_panel("PixPro"))
+
+        check("switch forward", F.switch_panel("Art Text"))
+        check("Art Text kept its own apps and place",
+              [x["path"] for x in F.saved_apps()] == [b["path"]]
+              and F.layout_pref() == "grid"
+              and store.get(F.DEF_TOP_LEFT + "grid") == "500,500")
+
+        check("rename the current panel", F.rename_panel("Art Text", "ArtText"))
+        check("the current name follows", F.current_panel() == "ArtText")
+        check("rename to its own name in new case",
+              F.rename_panel("ArtText", "Arttext"))
+        F.rename_panel("Arttext", "ArtText")
+        check("rename onto another panel is refused",
+              not F.rename_panel("ArtText", "PIXPRO"))
+        check("menu order", F.panel_names() == ["PixPro", "ArtText"])
+
+        F.add_panel("Affinity")
+        check("delete the current panel", F.delete_panel("Affinity"))
+        check("the one before it comes on screen",
+              F.current_panel() == "ArtText"
+              and [x["path"] for x in F.saved_apps()] == [b["path"]])
+        check("delete another panel", F.delete_panel("PixPro"))
+        check("one left", F.panel_names() == ["ArtText"])
+
+        # ArtText holds B.  Copy and move between it and a new panel.
+        F.add_panel("Affinity")
+        F.set_saved_apps([a, b])
+        check("copy to another panel", F.transfer_app(0, "ArtText", False))
+        check("a copy stays here", len(F.saved_apps()) == 2)
+        check("copying it again is refused",
+              not F.transfer_app(0, "ArtText", False))
+        check("so is one the target already has (by bundle id)",
+              not F.transfer_app(1, "ArtText", True))
+        check("nor to the panel on screen", not F.transfer_app(0, "Affinity", True))
+        F.set_saved_apps([a, b, {"path": "/Applications/C.app", "bundle": "c"}])
+        check("move to another panel", F.transfer_app(2, "ArtText", True))
+        check("a move leaves this panel",
+              [x["bundle"] for x in F.saved_apps()] == ["a", "b"])
+        F.switch_panel("ArtText")
+        check("the target has them at the end, in order",
+              [x["bundle"] for x in F.saved_apps()] == ["b", "a", "c"])
+    finally:
+        F.pref, F.set_pref, F.remove_pref = saved
+
+
 def render(app, layout, dark):
     F.set_pref = lambda k, v: None                 # never write prefs here
     F.layout_pref = lambda: layout
@@ -251,6 +331,7 @@ if __name__ == "__main__":
     test_chords()
     test_single_instance()
     test_help()
+    test_panels()
     test_render()
     print("\n%d failed" % len(FAILED) if FAILED else "\nall passed")
     sys.exit(1 if FAILED else 0)
