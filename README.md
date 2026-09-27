@@ -2,9 +2,11 @@
 
 A floating dock for the applications you choose, for macOS.
 
-Flache (pronounced "flash") is a small panel of application icons that floats
-above every window on every Space. Click an icon to open its application. One
-key sequence shows or hides the whole panel from anywhere.
+Flache (pronounced "flash") is a small floating icon panel to contain your
+favorite applications, similar to the Mac Dock. But Flache can be dragged
+anywhere on the display, in strip, column or grid format, floating above all
+windows on every desktop. Add and remove applications with a right-click, and
+show or hide Flache with a keyboard combination.
 
 ### [⬇︎ Download the latest release](https://github.com/spurious-cox/flache/releases/latest)
 
