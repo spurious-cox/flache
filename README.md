@@ -1,4 +1,4 @@
-# Flache 1.7.2
+# Flache 1.7.3
 
 A floating dock for the applications you choose, for macOS.
 
@@ -26,8 +26,10 @@ counts as a crash, and the login agent will bring the old copy straight back.
 
 * **Click** an icon to open the application, or bring it forward if it is
   already running. Flache never takes the focus from the app you are in.
-* **Right-click** for Help, Panels, Move to, Copy to, New…, the three
-  arrangements (Grid, Column and Strip), Hide Flache, Recents (if
+* **Right-click** for the application's own Help when it carries some (a
+  Read Me or a Help book), otherwise Flache Help, then Panels, Move to,
+  Copy to, New…, the three arrangements (Grid, Column and Strip), Hide
+  Flache, Recents (if
   available), Locate (shows the application in the Finder) and, at the
   bottom, Delete.
 * **Recents** are the same list the Dock shows; choose one to open it.

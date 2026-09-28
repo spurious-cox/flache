@@ -170,6 +170,26 @@ def test_recents():
         F.RECENTS_DIR = saved
 
 
+def test_app_help():
+    import tempfile
+    app = os.path.join(tempfile.mkdtemp(), "Thing.app")
+    res = os.path.join(app, "Contents", "Resources")
+    os.makedirs(res)
+    check("no Resources README, no help", F.app_help(app) is None)
+    open(os.path.join(res, "Other-README.txt"), "w").close()
+    check("another name's README ignored", F.app_help(app) is None)
+    open(os.path.join(res, "Thing-README.txt"), "w").close()
+    check("own README found", F.app_help(app).endswith("Thing-README.txt"))
+    os.makedirs(os.path.join(res, "Thing-README.rtfd"))
+    check("RTFD preferred over text", F.app_help(app).endswith("Thing-README.rtfd"))
+    check("missing app, no help", F.app_help("/nowhere/X.app") is None)
+    art = "/Applications/Art Text 4.app"
+    if os.path.isdir(art):
+        page = F.app_help(art) or ""
+        check("Help book start page found", page.endswith("index.html")
+              and os.path.isfile(page))
+
+
 def test_reorder():
     def moved(src, at):
         apps = list("ABCD")
@@ -357,6 +377,7 @@ if __name__ == "__main__":
     test_placement()
     test_app_list()
     test_recents()
+    test_app_help()
     test_reorder()
     test_add_dialog()
     test_chords()

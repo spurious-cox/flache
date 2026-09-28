@@ -1,27 +1,19 @@
 #!/usr/bin/env python3
-"""Flache - a floating dock for the applications you choose - v1.7.3
+"""Flache - a floating dock for the applications you choose - v1.4.0
 
 Flache (pronounced "flash") is a small panel of application icons that
 floats above every window on every Space.  A click opens the application; a
-right-click offers the application's own Help when it carries some on
-disk (a Read Me or a Help book), Flache Help otherwise, the named panels,
-Move to, Copy to, New, the three arrangements (a horizontal strip, a
-vertical column or a square grid), Hide Flache, the application's recent documents (for applications
-that keep them, as the Dock shows them), Locate (the application in the
-Finder) and, last, Delete.  The whole panel is shown and hidden by one
-system-wide chord, ⌃⌥⌘F unless another is recorded in Preferences, and it
-can be dragged anywhere; each arrangement remembers
-where it was left.  There can be several named panels, each with its own
-applications, arrangement and places; one is on screen at a time, and the
-Panels menu swaps them.
+right-click offers Help, Delete, New, the three arrangements (a
+horizontal strip, a vertical column or a square grid) and Hide Flache.  The whole panel is
+shown and hidden by one system-wide chord, ⌃⌥⌘F unless another is recorded
+in Preferences, and it can be dragged anywhere; each arrangement remembers
+where it was left.
 
 Flache is an accessory application: no Dock icon and no menu bar of its
-own, only the Old English F in the menu bar and the panel itself.  The
-chord is a Carbon hot key, which the window server delivers without
-Accessibility, and opening an application is an ordinary NSWorkspace
-request.  Full Disk Access is optional: it allows Recents, the documents
-each application opened recently, if the application keeps them.  macOS
-protects those lists; without it the menu simply has no Recents.
+own, only the Old English F in the menu bar and the panel itself.  Like
+Stache it needs NO permissions.  The chord is a Carbon hot key, which the
+window server delivers without Accessibility, and opening an application is
+an ordinary NSWorkspace request.
 
 Settings live in the com.timmccoy.flache defaults domain:
     FlacheApps          the applications, in order: [{path, bundle}, ...]
@@ -31,12 +23,6 @@ Settings live in the com.timmccoy.flache defaults domain:
     FlacheHotKeyMods    Carbon modifier mask of the chord
     FlacheVisible       whether the panel was showing at quit
     FlacheTopLeft-<layout>   where each arrangement was left, "x,y"
-    FlachePanel         the name of the panel on screen
-    FlachePanels        every named panel: [{name, apps, layout,
-                        top_left: {layout: "x,y"}}, ...]
-
-The first four keys above FlacheIconSize, and the FlacheTopLeft keys, always
-describe the panel on screen; FlachePanels is where the others wait.
 """
 
 import json
@@ -69,13 +55,12 @@ from AppKit import (
     NSMutableParagraphStyle, NSEdgeInsetsMake,
 )
 from Foundation import (
-    NSBundle, NSData, NSFileManager, NSKeyedUnarchiver, NSMakePoint,
-    NSMakeRect, NSMakeSize, NSNotificationCenter, NSObject, NSString, NSURL,
-    NSUserDefaults,
+    NSBundle, NSFileManager, NSMakePoint, NSMakeRect, NSMakeSize,
+    NSNotificationCenter, NSObject, NSString, NSURL, NSUserDefaults,
 )
 
 APP_NAME = "Flache"
-APP_VERSION = "1.7.3"
+APP_VERSION = "1.4.0"
 BUNDLE_ID = "com.timmccoy.flache"
 AGENT_PLIST = os.path.expanduser(
     "~/Library/LaunchAgents/%s.plist" % BUNDLE_ID)
@@ -87,9 +72,6 @@ DEF_HOTKEY_CODE = "FlacheHotKeyCode"
 DEF_HOTKEY_MODS = "FlacheHotKeyMods"
 DEF_VISIBLE = "FlacheVisible"
 DEF_TOP_LEFT = "FlacheTopLeft-"          # + layout
-DEF_PANEL = "FlachePanel"
-DEF_PANELS = "FlachePanels"
-FIRST_PANEL = "PixPro"                   # the name the original panel gets
 
 LAYOUTS = ("strip", "column", "grid")
 ICON_SIZES = {"small": 32, "medium": 48, "large": 64}
@@ -167,204 +149,6 @@ def set_saved_apps(apps):
                         for a in apps])
 
 
-# ---------------------------------------------------------------------------
-# Named panels
-# ---------------------------------------------------------------------------
-#
-# The panel on screen keeps using FlacheApps, FlacheLayout and the
-# FlacheTopLeft-<layout> keys, so nothing that draws or places it needs to
-# know that panels exist.  Switching saves those keys under the current
-# panel's name in FlachePanels and loads the chosen panel's into them.
-
-def remove_pref(key):
-    defaults().removeObjectForKey_(key)
-
-
-def current_panel():
-    name = pref(DEF_PANEL)
-    return str(name) if name else FIRST_PANEL
-
-
-def clean_name(text):
-    return " ".join(str(text or "").split())
-
-
-def _plain_apps(apps):
-    out = []
-    for entry in apps or []:
-        try:
-            out.append({"path": str(entry["path"]),
-                        "bundle": str(entry.get("bundle") or "")})
-        except (KeyError, TypeError):
-            continue
-    return out
-
-
-def stored_panels():
-    out = []
-    for entry in pref(DEF_PANELS) or []:
-        try:
-            name = clean_name(entry["name"])
-        except (KeyError, TypeError):
-            continue
-        if not name or any(p["name"] == name for p in out):
-            continue
-        layout = str(entry.get("layout") or "strip")
-        out.append({
-            "name": name,
-            "apps": _plain_apps(entry.get("apps")),
-            "layout": layout if layout in LAYOUTS else "strip",
-            "top_left": {str(k): str(v) for k, v in
-                         dict(entry.get("top_left") or {}).items()
-                         if str(k) in LAYOUTS and v},
-        })
-    return out
-
-
-def set_stored_panels(panels):
-    set_pref(DEF_PANELS, [{"name": p["name"], "apps": p["apps"],
-                           "layout": p["layout"], "top_left": p["top_left"]}
-                          for p in panels])
-
-
-def snapshot_current():
-    top_left = {}
-    for layout in LAYOUTS:
-        value = pref(DEF_TOP_LEFT + layout)
-        if value:
-            top_left[layout] = str(value)
-    return {"name": current_panel(), "apps": _plain_apps(saved_apps()),
-            "layout": layout_pref(), "top_left": top_left}
-
-
-def load_into_current(panel):
-    set_saved_apps(panel["apps"])
-    set_pref(DEF_LAYOUT, panel["layout"])
-    for layout in LAYOUTS:
-        value = panel["top_left"].get(layout)
-        if value:
-            set_pref(DEF_TOP_LEFT + layout, value)
-        else:
-            remove_pref(DEF_TOP_LEFT + layout)
-    set_pref(DEF_PANEL, panel["name"])
-
-
-def panel_list():
-    """Every panel in menu order, the current one as it is right now.
-
-    Before the first switch nothing is stored, and the panel that was
-    always there becomes the first one, named FIRST_PANEL.
-    """
-    panels = stored_panels()
-    now = snapshot_current()
-    for i, panel in enumerate(panels):
-        if panel["name"] == now["name"]:
-            panels[i] = now
-            break
-    else:
-        panels.insert(0, now)
-    return panels
-
-
-def panel_names():
-    return [p["name"] for p in panel_list()]
-
-
-def name_taken(name, panels, allow=None):
-    """Names are compared ignoring case, so "Affinity" and "affinity" are
-    not two panels that look alike in the menu."""
-    want = name.lower()
-    return any(p["name"].lower() == want and p["name"] != allow
-               for p in panels)
-
-
-def switch_panel(name):
-    if name == current_panel():
-        return False
-    panels = panel_list()
-    target = next((p for p in panels if p["name"] == name), None)
-    if target is None:
-        return False
-    set_stored_panels(panels)
-    load_into_current(target)
-    return True
-
-
-def add_panel(name):
-    """A new, empty panel, made current.  It starts in the same arrangement
-    and place as the one it replaces, so the screen does not jump."""
-    name = clean_name(name)
-    panels = panel_list()
-    if not name or name_taken(name, panels):
-        return False
-    now = panels[[p["name"] for p in panels].index(current_panel())]
-    new = {"name": name, "apps": [], "layout": now["layout"],
-           "top_left": dict(now["top_left"])}
-    panels.append(new)
-    set_stored_panels(panels)
-    load_into_current(new)
-    return True
-
-
-def rename_panel(old, new):
-    new = clean_name(new)
-    panels = panel_list()
-    if not new or name_taken(new, panels, allow=old):
-        return False
-    for panel in panels:
-        if panel["name"] == old:
-            panel["name"] = new
-    set_stored_panels(panels)
-    if current_panel() == old:
-        set_pref(DEF_PANEL, new)
-    return True
-
-
-def same_app(a, b):
-    """The same application: one bundle identifier, or one file on disk."""
-    if a.get("bundle") and a.get("bundle") == b.get("bundle"):
-        return True
-    return os.path.realpath(a["path"]) == os.path.realpath(b["path"])
-
-
-def transfer_app(index, target, move):
-    """Add the current panel's app at `index` to the end of the panel named
-    `target`, and with `move` take it out of the current one.  Refused when
-    the target already has it."""
-    if target == current_panel():
-        return False
-    apps = saved_apps()
-    if not 0 <= index < len(apps):
-        return False
-    panels = panel_list()
-    dest = next((p for p in panels if p["name"] == target), None)
-    entry = apps[index]
-    if dest is None or any(same_app(e, entry) for e in dest["apps"]):
-        return False
-    dest["apps"].append({"path": entry["path"], "bundle": entry["bundle"]})
-    set_stored_panels(panels)
-    if move:
-        del apps[index]
-        set_saved_apps(apps)
-    return True
-
-
-def delete_panel(name):
-    """Remove a panel.  The last one cannot go; deleting the current one
-    puts the next in the menu (or the one before) on screen."""
-    panels = panel_list()
-    names = [p["name"] for p in panels]
-    if len(panels) < 2 or name not in names:
-        return False
-    at = names.index(name)
-    if name == current_panel():
-        load_into_current(panels[at + 1] if at + 1 < len(panels)
-                          else panels[at - 1])
-    del panels[at]
-    set_stored_panels(panels)
-    return True
-
-
 def bundle_id_of(path):
     bundle = NSBundle.bundleWithPath_(path)
     ident = bundle.bundleIdentifier() if bundle is not None else None
@@ -391,95 +175,6 @@ def resolve(entry):
 def app_name(path):
     name = str(NSFileManager.defaultManager().displayNameAtPath_(path))
     return name[:-4] if name.endswith(".app") else name
-
-
-# The per-application lists the Dock shows as recent documents.  Only
-# applications that open documents through macOS keep one.
-RECENTS_DIR = os.path.expanduser(
-    "~/Library/Application Support/com.apple.sharedfilelist/"
-    "com.apple.LSSharedFileList.ApplicationRecentDocuments")
-RECENTS_SUFFIXES = (".sfl4", ".sfl3")
-BOOKMARK_NO_UI_NO_MOUNT = (1 << 8) | (1 << 9)
-
-
-def recents_file(bundle):
-    """The recent-documents list for a bundle identifier, or None.  The
-    file names are the identifier in lower case."""
-    if not bundle:
-        return None
-    for suffix in RECENTS_SUFFIXES:
-        path = os.path.join(RECENTS_DIR, bundle.lower() + suffix)
-        if os.path.isfile(path):
-            return path
-    return None
-
-
-def recent_documents(bundle):
-    """Paths of the application's recent documents that still exist, most
-    recent first.  Volumes that are not mounted are not mounted to look."""
-    path = recents_file(bundle)
-    if path is None:
-        return []
-    try:
-        root = NSKeyedUnarchiver.unarchiveObjectWithData_(
-            NSData.dataWithContentsOfFile_(path))
-        items = list(root["items"])
-    except Exception:
-        return []
-    found = []
-    for item in items:
-        bookmark = item.get("Bookmark") if hasattr(item, "get") else None
-        if bookmark is None:
-            continue
-        url, _stale, _err = NSURL.\
-            URLByResolvingBookmarkData_options_relativeToURL_bookmarkDataIsStale_error_(
-                bookmark, BOOKMARK_NO_UI_NO_MOUNT, None, None, None)
-        if url is not None and os.path.exists(str(url.path())):
-            found.append(str(url.path()))
-    return found
-
-
-def app_help(app_path):
-    """Help an application carries on disk, or None for Flache Help.
-
-    First a Read Me named <App>-README.rtfd, .txt or .md in Resources (the
-    PixPro apps' convention; an RTFD, text with pictures, wins).  Then an
-    Apple Help book whose start page is in the bundle, in the user's
-    language if the book has it.  A book that only links to a website has
-    nothing on disk and does not count.
-    """
-    resources = os.path.join(app_path, "Contents", "Resources")
-    try:
-        names = os.listdir(resources)
-    except OSError:
-        return None
-    base = os.path.basename(app_path.rstrip("/"))[:-4]
-    for ext in (".rtfd", ".txt", ".md"):
-        own = base + "-README" + ext
-        if own in names:
-            return os.path.join(resources, own)
-    bundle = NSBundle.bundleWithPath_(app_path)
-    info = bundle.infoDictionary() if bundle is not None else None
-    folder = info.get("CFBundleHelpBookFolder") if info else None
-    if not folder:
-        return None
-    book = os.path.join(resources, str(folder), "Contents")
-    book_info = NSBundle.bundleWithPath_(os.path.dirname(book))
-    start = None
-    if book_info is not None and book_info.infoDictionary():
-        start = book_info.infoDictionary().get("HPDBookAccessPath")
-    start = str(start) if start else "index.html"
-    book_res = os.path.join(book, "Resources")
-    try:
-        langs = [n[:-6] for n in os.listdir(book_res) if n.endswith(".lproj")]
-    except OSError:
-        langs = []
-    order = list(NSBundle.preferredLocalizationsFromArray_(langs)) if langs else []
-    for where in [os.path.join(book_res, l + ".lproj") for l in order + ["en"]] + [book_res]:
-        page = os.path.join(where, start)
-        if os.path.isfile(page):
-            return page
-    return None
 
 
 def insert_apps(apps, paths, at=None):
@@ -859,7 +554,6 @@ class DockView(NSView):
         self._drop_at = None
         self._start = None
         self._origin = None
-        self._shape = None                 # the panel's frame at the press
         self._dragging = False
         self._moving = None                # index of the icon being carried
         self._cursor = None                # where it is, in view coordinates
@@ -1002,19 +696,8 @@ class DockView(NSView):
             return
         self._pressed = self._indexForEvent_(event)
         self._start = NSEvent.mouseLocation()
-        frame = self.window().frame()
-        self._origin = frame.origin
-        self._shape = (frame.origin.x, frame.origin.y,
-                       frame.size.width, frame.size.height)
+        self._origin = self.window().frame().origin
         self._dragging = False
-        self.setNeedsDisplay_(True)
-
-    def cancelPress(self):
-        """Forget a press that has not been released.  A menu opening, or
-        the panel changing shape, means its release is no longer a click."""
-        self._pressed, self._start, self._dragging = None, None, False
-        self._moving, self._cursor = None, None
-        self._setDropAt_(None)
         self.setNeedsDisplay_(True)
 
     def mouseDragged_(self, event):
@@ -1063,22 +746,13 @@ class DockView(NSView):
         if dragging:
             self.controller.panelWasMoved()
             return
-        # Only a press and release on one icon of an unchanged panel opens
-        # it.  Choosing Grid from the menu reshapes the panel under the
-        # pointer, and a release then landing on whatever icon moved there
-        # must not launch it.
-        frame = self.window().frame()
-        same_shape = self._shape == (frame.origin.x, frame.origin.y,
-                                     frame.size.width, frame.size.height)
-        if (same_shape and pressed is not None
-                and pressed == self._indexForEvent_(event)):
+        if pressed is not None and pressed == self._indexForEvent_(event):
             if not self.controller.apps:
                 self.controller.chooseAppsAt_(0)
             else:
                 self.controller.launchAt_(pressed)
 
     def menuForEvent_(self, event):
-        self.cancelPress()
         return self.controller.menuForIndex_(self._indexForEvent_(event))
 
     def rightMouseDown_(self, event):
@@ -1189,16 +863,6 @@ HELP_SECTIONS = [
         "shows where they will land. Right-click an icon and choose "
         "Delete to take it out of Flache; the application itself is not "
         "touched.")),
-    ("Panels", (
-        "Flache can keep several named panels, each with its own "
-        "applications, arrangement and places, and shows one at a time. "
-        "Right-click Flache, or use the F in the menu bar, and choose a "
-        "name under Panels to swap it in; it appears where you last left "
-        "it. New Panel… starts an empty one, and Rename… and Delete… act "
-        "on the panel on screen. Deleting a panel only removes it from "
-        "Flache; the applications in it are not touched. Right-click an "
-        "icon and choose Move to or Copy to to put it in another panel; "
-        "a panel that already has it is grayed out.")),
     ("Strip, column or grid", (
         "Right-click and choose Strip for one row, Column for one column, "
         "or Grid for a square block. Icon size (small, medium or large) is "
@@ -1214,18 +878,6 @@ HELP_SECTIONS = [
         "by its edge. Each "
         "arrangement remembers where you left it, so a strip along the top "
         "and a column down the side can each keep their own place.")),
-    ("Help for an application", (
-        "Right-click an icon: if that application carries its own help — a "
-        "Read Me, or a Help book stored in the application — the first item "
-        "is that application's Help and opens it. Otherwise it is Flache "
-        "Help. The F in the menu bar always opens Flache's Help.")),
-    ("Recents", (
-        "Right-click an icon to see the documents that application opened "
-        "recently, the same list the Dock shows; choose one to open it. "
-        "Recents appear if they are available: Flache needs Full Disk "
-        "Access (System Settings → Privacy & Security → Full Disk Access), "
-        "and only applications that keep such a list have one. Locate "
-        "shows the application itself in the Finder.")),
     ("A faded icon", (
         "The application has been removed or moved somewhere Flache cannot "
         "find it. Right-click it and choose Delete, then add the "
@@ -1479,64 +1131,6 @@ def _alert(title, body):
     alert.runModal()
 
 
-def _give_back(front):
-    """Return the keyboard to the app that had it before a Flache dialog.
-    The panel never takes focus, so nothing else would hand it back."""
-    if (front is not None and not front.isTerminated()
-            and front.bundleIdentifier() != BUNDLE_ID):
-        front.activateWithOptions_(0)
-
-
-def ask_panel_name(title, button, default=""):
-    """The name typed, cleaned up, or None if cancelled."""
-    front = NSWorkspace.sharedWorkspace().frontmostApplication()
-    alert = NSAlert.alloc().init()
-    alert.setMessageText_(title)
-    alert.setInformativeText_("A name for the panel, such as PixPro, "
-                              "ArtText or Affinity.")
-    field = NSTextField.alloc().initWithFrame_(NSMakeRect(0, 0, 260, 24))
-    field.setStringValue_(default)
-    alert.setAccessoryView_(field)
-    alert.addButtonWithTitle_(button)
-    alert.addButtonWithTitle_("Cancel")
-    alert.window().setInitialFirstResponder_(field)
-    NSApp.activateIgnoringOtherApps_(True)
-    ok = alert.runModal() == 1000
-    name = clean_name(field.stringValue())
-    _give_back(front)
-    return name if ok else None
-
-
-def ask_usable_name(title, button, default="", allow=None):
-    """Ask until the name is usable or the dialog is cancelled.  `allow` is
-    the panel's own name when renaming, which is not a clash."""
-    while True:
-        name = ask_panel_name(title, button, default)
-        if name is None:
-            return None
-        if name and not name_taken(name, panel_list(), allow=allow):
-            return name
-        _alert("Choose another name",
-               ("“%s” is already a panel." % name) if name
-               else "A panel needs a name.")
-        default = name
-
-
-def confirm_delete_panel(name):
-    front = NSWorkspace.sharedWorkspace().frontmostApplication()
-    alert = NSAlert.alloc().init()
-    alert.setMessageText_("Delete the panel “%s”?" % name)
-    alert.setInformativeText_("Its list of applications is removed from "
-                              "Flache. The applications themselves are "
-                              "not touched.")
-    alert.addButtonWithTitle_("Delete")
-    alert.addButtonWithTitle_("Cancel")
-    NSApp.activateIgnoringOtherApps_(True)
-    ok = alert.runModal() == 1000
-    _give_back(front)
-    return ok
-
-
 # ---------------------------------------------------------------------------
 # Updates
 # ---------------------------------------------------------------------------
@@ -1725,7 +1319,7 @@ class FlacheApp(NSObject):
             item.button().setImage_(image)
         else:
             item.button().setTitle_("F")
-        item.button().setToolTip_("Flache — %s" % current_panel())
+        item.button().setToolTip_("Flache")
 
         menu = NSMenu.alloc().init()
         menu.setAutoenablesItems_(False)
@@ -1735,8 +1329,6 @@ class FlacheApp(NSObject):
         menu.addItem_(_item("Help…", "showHelp:", self))
         menu.addItem_(_item("Check for Updates…", "checkUpdates:", self))
         menu.addItem_(NSMenuItem.separatorItem())
-        self.panels_item = _item("Panels", None, None)
-        menu.addItem_(self.panels_item)
         self.toggle_item = _item("Show Flache", "toggleFromMenu:", self)
         menu.addItem_(self.toggle_item)
         menu.addItem_(NSMenuItem.separatorItem())
@@ -1747,7 +1339,6 @@ class FlacheApp(NSObject):
     def menuNeedsUpdate_(self, menu):
         verb = "Hide" if self.panel.isVisible() else "Show"
         show_chord(self.toggle_item, "%s Flache" % verb, *current_hotkey())
-        self.panels_item.setSubmenu_(self.panelsMenu())
 
     # -- hotkey -----------------------------------------------------------
 
@@ -1852,41 +1443,17 @@ class FlacheApp(NSObject):
     def menuForIndex_(self, index):
         menu = NSMenu.alloc().init()
         menu.setAutoenablesItems_(False)
-        present = index is not None and index < len(self.apps)
-        app_path = resolve(self.apps[index]) if present else None
-        # The application's own Read Me when it carries one; Flache's
-        # otherwise.  The menu bar's Help is always Flache's.
-        readme = app_help(app_path) if app_path is not None else None
-        if readme is not None:
-            help_item = _item("%s Help" % app_name(app_path),
-                              "openAppHelp:", self)
-            help_item.setRepresentedObject_(readme)
-            menu.addItem_(help_item)
-        else:
-            menu.addItem_(_item("Flache Help", "showHelp:", self))
-        panels = _item("Panels", None, None)
-        panels.setSubmenu_(self.panelsMenu())
-        menu.addItem_(panels)
+        menu.addItem_(_item("Help", "showHelp:", self))
         menu.addItem_(NSMenuItem.separatorItem())
 
-        others = [p for p in panel_list() if p["name"] != current_panel()]
-        for title, action in (("Move to", "moveAppToPanel:"),
-                              ("Copy to", "copyAppToPanel:")):
-            parent = _item(title, None, None)
-            parent.setEnabled_(present and bool(others))
-            if present and others:
-                sub = NSMenu.alloc().init()
-                sub.setAutoenablesItems_(False)
-                entry = self.apps[index]
-                for panel in others:
-                    target = _item(panel["name"], action, self)
-                    target.setRepresentedObject_(panel["name"])
-                    target.setTag_(index)
-                    target.setEnabled_(not any(same_app(e, entry)
-                                               for e in panel["apps"]))
-                    sub.addItem_(target)
-                parent.setSubmenu_(sub)
-            menu.addItem_(parent)
+        present = index is not None and index < len(self.apps)
+        title = ("Delete “%s”" % app_name(self.apps[index]["path"])
+                 if present else "Delete")
+        delete = _item(title, "deleteApp:", self)
+        delete.setEnabled_(present)
+        if present:
+            delete.setTag_(index)
+        menu.addItem_(delete)
         new = _item("New…", "newApp:", self)
         new.setTag_(index + 1 if present else len(self.apps))
         menu.addItem_(new)
@@ -1902,129 +1469,13 @@ class FlacheApp(NSObject):
         hide = _item("Hide Flache", "hidePanel:", self)
         show_chord(hide, "Hide Flache", *current_hotkey())
         menu.addItem_(hide)
-        menu.addItem_(NSMenuItem.separatorItem())
-
-        # The application's recent documents, as the Dock lists them, then
-        # Locate, which shows the application in the Finder.
-        if app_path is not None:
-            for doc in recent_documents(self.apps[index].get("bundle")):
-                entry = _item(str(NSFileManager.defaultManager().
-                                  displayNameAtPath_(doc)),
-                              "openRecent:", self)
-                entry.setRepresentedObject_([doc, app_path])
-                icon = NSWorkspace.sharedWorkspace().iconForFile_(doc)
-                icon.setSize_(NSMakeSize(16, 16))
-                entry.setImage_(icon)
-                menu.addItem_(entry)
-        finder = _item("Locate %s" % app_name(self.apps[index]["path"])
-                       if present else "Locate", "showInFinder:", self)
-        finder.setEnabled_(app_path is not None)
-        if app_path is not None:
-            finder.setRepresentedObject_(app_path)
-        menu.addItem_(finder)
-        # Last, and apart, so a slip of the pointer does not take an icon out.
-        menu.addItem_(NSMenuItem.separatorItem())
-        title = ("Delete “%s”" % app_name(self.apps[index]["path"])
-                 if present else "Delete")
-        delete = _item(title, "deleteApp:", self)
-        delete.setEnabled_(present)
-        if present:
-            delete.setTag_(index)
-        menu.addItem_(delete)
         return menu
-
-    # -- named panels -----------------------------------------------------
-
-    def panelsMenu(self):
-        menu = NSMenu.alloc().init()
-        menu.setAutoenablesItems_(False)
-        names, current = panel_names(), current_panel()
-        for name in names:
-            entry = _item(name, "choosePanel:", self)
-            entry.setRepresentedObject_(name)
-            entry.setState_(1 if name == current else 0)
-            menu.addItem_(entry)
-        menu.addItem_(NSMenuItem.separatorItem())
-        menu.addItem_(_item("New Panel…", "newPanel:", self))
-        menu.addItem_(_item("Rename “%s”…" % current, "renamePanel:", self))
-        delete = _item("Delete “%s”…" % current, "deletePanel:", self)
-        delete.setEnabled_(len(names) > 1)
-        menu.addItem_(delete)
-        return menu
-
-    def choosePanel_(self, sender):
-        if switch_panel(str(sender.representedObject())):
-            self.panelChanged()
-
-    def newPanel_(self, sender):
-        name = ask_usable_name("New Panel", "Create")
-        if name and add_panel(name):
-            self.panelChanged()
-
-    def renamePanel_(self, sender):
-        old = current_panel()
-        name = ask_usable_name("Rename “%s”" % old, "Rename", old, allow=old)
-        if name and name != old and rename_panel(old, name):
-            self.panelChanged()
-
-    def deletePanel_(self, sender):
-        name = current_panel()
-        if len(panel_names()) > 1 and confirm_delete_panel(name):
-            if delete_panel(name):
-                self.panelChanged()
-
-    def panelChanged(self):
-        """The saved keys now describe a different panel; show it."""
-        self.apps = saved_apps()
-        self.status_item.button().setToolTip_("Flache — %s" % current_panel())
-        if self.prefs is not None:
-            self.prefs.refresh()
-        if self.panel.isVisible():
-            self.relayout()
-        else:
-            self.showPanel()
-
-    def moveAppToPanel_(self, sender):
-        if transfer_app(int(sender.tag()), str(sender.representedObject()),
-                        True):
-            self.apps = saved_apps()
-            self.relayout()
-
-    def copyAppToPanel_(self, sender):
-        transfer_app(int(sender.tag()), str(sender.representedObject()), False)
 
     def hidePanel_(self, sender):
         # The panel never becomes key, so hiding it leaves focus, and the
         # Space, exactly where they are.
         if self.panel.isVisible():
             self.toggle()
-
-    def openRecent_(self, sender):
-        doc, app = [str(p) for p in sender.representedObject()]
-        config = NSWorkspaceOpenConfiguration.configuration()
-        config.setActivates_(True)
-        NSWorkspace.sharedWorkspace().\
-            openURLs_withApplicationAtURL_configuration_completionHandler_(
-                [NSURL.fileURLWithPath_(doc)], NSURL.fileURLWithPath_(app),
-                config, None)
-
-    def openAppHelp_(self, sender):
-        """A Help book page opens in the browser; a Read Me in TextEdit."""
-        url = NSURL.fileURLWithPath_(str(sender.representedObject()))
-        if url.path().endswith(".html"):
-            NSWorkspace.sharedWorkspace().openURL_(url)
-            return
-        editor = NSWorkspace.sharedWorkspace().\
-            URLForApplicationWithBundleIdentifier_("com.apple.TextEdit")
-        config = NSWorkspaceOpenConfiguration.configuration()
-        config.setActivates_(True)
-        NSWorkspace.sharedWorkspace().\
-            openURLs_withApplicationAtURL_configuration_completionHandler_(
-                [url], editor, config, None)
-
-    def showInFinder_(self, sender):
-        NSWorkspace.sharedWorkspace().activateFileViewerSelectingURLs_(
-            [NSURL.fileURLWithPath_(str(sender.representedObject()))])
 
     def deleteApp_(self, sender):
         index = int(sender.tag())
