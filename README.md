@@ -1,4 +1,4 @@
-# Flache 1.6.0
+# Flache 1.7.2
 
 A floating dock for the applications you choose, for macOS.
 
@@ -27,8 +27,12 @@ counts as a crash, and the login agent will bring the old copy straight back.
 * **Click** an icon to open the application, or bring it forward if it is
   already running. Flache never takes the focus from the app you are in.
 * **Right-click** for Help, Panels, Move to, Copy to, New…, the three
-  arrangements (Grid, Column and Strip), Hide Flache and, at the bottom,
-  Delete.
+  arrangements (Grid, Column and Strip), Hide Flache, Recents (if
+  available), Locate (shows the application in the Finder) and, at the
+  bottom, Delete.
+* **Recents** are the same list the Dock shows; choose one to open it.
+  They need Full Disk Access (below), and only applications that keep such
+  a list have one.
 * **New…** adds applications after the icon you right-clicked. Applications
   already in Flache are grayed out. You can also drag applications from the
   Finder onto Flache.
@@ -61,7 +65,11 @@ size and the show/hide keys are shared by every panel.
   from the menu bar and it stays quit until you next log in. Only one copy
   ever runs, so adding Flache to Login Items as well is harmless.
 
-Flache needs no permissions: no Accessibility, no Input Monitoring.
+Flache needs no Accessibility or Input Monitoring. Giving it **Full Disk
+Access** (System Settings → Privacy & Security → Full Disk Access) allows
+**Recents** in the right-click menu, if available: the documents that
+application opened recently, which macOS protects. Without it everything
+else works and the menu has no Recents.
 
 ## Building
 

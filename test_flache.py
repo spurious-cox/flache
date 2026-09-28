@@ -140,6 +140,36 @@ def test_app_list():
           F.app_name("/System/Applications/Calculator.app") == "Calculator")
 
 
+def test_recents():
+    import tempfile
+    from Foundation import NSKeyedArchiver, NSURL
+    tmp = tempfile.mkdtemp()
+    doc = os.path.join(tmp, "a doc.txt")
+    open(doc, "w").close()
+    gone = os.path.join(tmp, "gone.txt")
+    open(gone, "w").close()
+    marks = []
+    for path in (doc, gone):
+        data, _err = NSURL.fileURLWithPath_(path).\
+            bookmarkDataWithOptions_includingResourceValuesForKeys_relativeToURL_error_(
+                0, None, None, None)
+        marks.append(data)
+    os.remove(gone)
+    root = {"items": [{"Bookmark": marks[0]}, {"uuid": "no bookmark"},
+                      {"Bookmark": marks[1]}]}
+    NSKeyedArchiver.archivedDataWithRootObject_(root).writeToFile_atomically_(
+        os.path.join(tmp, "com.example.docs.sfl4"), True)
+    saved, F.RECENTS_DIR = F.RECENTS_DIR, tmp
+    try:
+        found = F.recent_documents("com.Example.Docs")
+        check("recents read, missing and bookmark-less skipped",
+              [os.path.realpath(p) for p in found] == [os.path.realpath(doc)])
+        check("no list, no recents", F.recent_documents("com.example.none") == [])
+        check("no bundle id, no recents", F.recent_documents("") == [])
+    finally:
+        F.RECENTS_DIR = saved
+
+
 def test_reorder():
     def moved(src, at):
         apps = list("ABCD")
@@ -326,6 +356,7 @@ if __name__ == "__main__":
     test_hit_testing()
     test_placement()
     test_app_list()
+    test_recents()
     test_reorder()
     test_add_dialog()
     test_chords()

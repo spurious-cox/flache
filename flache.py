@@ -1,22 +1,26 @@
 #!/usr/bin/env python3
-"""Flache - a floating dock for the applications you choose - v1.6.0
+"""Flache - a floating dock for the applications you choose - v1.7.2
 
 Flache (pronounced "flash") is a small panel of application icons that
 floats above every window on every Space.  A click opens the application; a
 right-click offers Help, the named panels, Move to, Copy to, New, the
 three arrangements (a horizontal strip, a vertical column or a square
-grid), Hide Flache and, last, Delete.  The whole panel is
-shown and hidden by one system-wide chord, ⌃⌥⌘F unless another is recorded
-in Preferences, and it can be dragged anywhere; each arrangement remembers
+grid), Hide Flache, the application's recent documents (for applications
+that keep them, as the Dock shows them), Locate (the application in the
+Finder) and, last, Delete.  The whole panel is shown and hidden by one
+system-wide chord, ⌃⌥⌘F unless another is recorded in Preferences, and it
+can be dragged anywhere; each arrangement remembers
 where it was left.  There can be several named panels, each with its own
 applications, arrangement and places; one is on screen at a time, and the
 Panels menu swaps them.
 
 Flache is an accessory application: no Dock icon and no menu bar of its
-own, only the Old English F in the menu bar and the panel itself.  Like
-Stache it needs NO permissions.  The chord is a Carbon hot key, which the
-window server delivers without Accessibility, and opening an application is
-an ordinary NSWorkspace request.
+own, only the Old English F in the menu bar and the panel itself.  The
+chord is a Carbon hot key, which the window server delivers without
+Accessibility, and opening an application is an ordinary NSWorkspace
+request.  Full Disk Access is optional: it allows Recents, the documents
+each application opened recently, if the application keeps them.  macOS
+protects those lists; without it the menu simply has no Recents.
 
 Settings live in the com.timmccoy.flache defaults domain:
     FlacheApps          the applications, in order: [{path, bundle}, ...]
@@ -64,12 +68,13 @@ from AppKit import (
     NSMutableParagraphStyle, NSEdgeInsetsMake,
 )
 from Foundation import (
-    NSBundle, NSFileManager, NSMakePoint, NSMakeRect, NSMakeSize,
-    NSNotificationCenter, NSObject, NSString, NSURL, NSUserDefaults,
+    NSBundle, NSData, NSFileManager, NSKeyedUnarchiver, NSMakePoint,
+    NSMakeRect, NSMakeSize, NSNotificationCenter, NSObject, NSString, NSURL,
+    NSUserDefaults,
 )
 
 APP_NAME = "Flache"
-APP_VERSION = "1.6.0"
+APP_VERSION = "1.7.2"
 BUNDLE_ID = "com.timmccoy.flache"
 AGENT_PLIST = os.path.expanduser(
     "~/Library/LaunchAgents/%s.plist" % BUNDLE_ID)
@@ -385,6 +390,52 @@ def resolve(entry):
 def app_name(path):
     name = str(NSFileManager.defaultManager().displayNameAtPath_(path))
     return name[:-4] if name.endswith(".app") else name
+
+
+# The per-application lists the Dock shows as recent documents.  Only
+# applications that open documents through macOS keep one.
+RECENTS_DIR = os.path.expanduser(
+    "~/Library/Application Support/com.apple.sharedfilelist/"
+    "com.apple.LSSharedFileList.ApplicationRecentDocuments")
+RECENTS_SUFFIXES = (".sfl4", ".sfl3")
+BOOKMARK_NO_UI_NO_MOUNT = (1 << 8) | (1 << 9)
+
+
+def recents_file(bundle):
+    """The recent-documents list for a bundle identifier, or None.  The
+    file names are the identifier in lower case."""
+    if not bundle:
+        return None
+    for suffix in RECENTS_SUFFIXES:
+        path = os.path.join(RECENTS_DIR, bundle.lower() + suffix)
+        if os.path.isfile(path):
+            return path
+    return None
+
+
+def recent_documents(bundle):
+    """Paths of the application's recent documents that still exist, most
+    recent first.  Volumes that are not mounted are not mounted to look."""
+    path = recents_file(bundle)
+    if path is None:
+        return []
+    try:
+        root = NSKeyedUnarchiver.unarchiveObjectWithData_(
+            NSData.dataWithContentsOfFile_(path))
+        items = list(root["items"])
+    except Exception:
+        return []
+    found = []
+    for item in items:
+        bookmark = item.get("Bookmark") if hasattr(item, "get") else None
+        if bookmark is None:
+            continue
+        url, _stale, _err = NSURL.\
+            URLByResolvingBookmarkData_options_relativeToURL_bookmarkDataIsStale_error_(
+                bookmark, BOOKMARK_NO_UI_NO_MOUNT, None, None, None)
+        if url is not None and os.path.exists(str(url.path())):
+            found.append(str(url.path()))
+    return found
 
 
 def insert_apps(apps, paths, at=None):
@@ -1119,6 +1170,13 @@ HELP_SECTIONS = [
         "by its edge. Each "
         "arrangement remembers where you left it, so a strip along the top "
         "and a column down the side can each keep their own place.")),
+    ("Recents", (
+        "Right-click an icon to see the documents that application opened "
+        "recently, the same list the Dock shows; choose one to open it. "
+        "Recents appear if they are available: Flache needs Full Disk "
+        "Access (System Settings → Privacy & Security → Full Disk Access), "
+        "and only applications that keep such a list have one. Locate "
+        "shows the application itself in the Finder.")),
     ("A faded icon", (
         "The application has been removed or moved somewhere Flache cannot "
         "find it. Right-click it and choose Delete, then add the "
@@ -1785,6 +1843,27 @@ class FlacheApp(NSObject):
         hide = _item("Hide Flache", "hidePanel:", self)
         show_chord(hide, "Hide Flache", *current_hotkey())
         menu.addItem_(hide)
+        menu.addItem_(NSMenuItem.separatorItem())
+
+        # The application's recent documents, as the Dock lists them, then
+        # Locate, which shows the application in the Finder.
+        app_path = resolve(self.apps[index]) if present else None
+        if app_path is not None:
+            for doc in recent_documents(self.apps[index].get("bundle")):
+                entry = _item(str(NSFileManager.defaultManager().
+                                  displayNameAtPath_(doc)),
+                              "openRecent:", self)
+                entry.setRepresentedObject_([doc, app_path])
+                icon = NSWorkspace.sharedWorkspace().iconForFile_(doc)
+                icon.setSize_(NSMakeSize(16, 16))
+                entry.setImage_(icon)
+                menu.addItem_(entry)
+        finder = _item("Locate %s" % app_name(self.apps[index]["path"])
+                       if present else "Locate", "showInFinder:", self)
+        finder.setEnabled_(app_path is not None)
+        if app_path is not None:
+            finder.setRepresentedObject_(app_path)
+        menu.addItem_(finder)
         # Last, and apart, so a slip of the pointer does not take an icon out.
         menu.addItem_(NSMenuItem.separatorItem())
         title = ("Delete “%s”" % app_name(self.apps[index]["path"])
@@ -1861,6 +1940,19 @@ class FlacheApp(NSObject):
         # Space, exactly where they are.
         if self.panel.isVisible():
             self.toggle()
+
+    def openRecent_(self, sender):
+        doc, app = [str(p) for p in sender.representedObject()]
+        config = NSWorkspaceOpenConfiguration.configuration()
+        config.setActivates_(True)
+        NSWorkspace.sharedWorkspace().\
+            openURLs_withApplicationAtURL_configuration_completionHandler_(
+                [NSURL.fileURLWithPath_(doc)], NSURL.fileURLWithPath_(app),
+                config, None)
+
+    def showInFinder_(self, sender):
+        NSWorkspace.sharedWorkspace().activateFileViewerSelectingURLs_(
+            [NSURL.fileURLWithPath_(str(sender.representedObject()))])
 
     def deleteApp_(self, sender):
         index = int(sender.tag())
