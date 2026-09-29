@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Flache - a floating dock for the applications you choose - v1.7.3
+"""Flache - a floating dock for the applications you choose - v1.7.4
 
 Flache (pronounced "flash") is a small panel of application icons that
 floats above every window on every Space.  A click opens the application; a
@@ -75,7 +75,7 @@ from Foundation import (
 )
 
 APP_NAME = "Flache"
-APP_VERSION = "1.7.3"
+APP_VERSION = "1.7.4"
 BUNDLE_ID = "com.timmccoy.flache"
 AGENT_PLIST = os.path.expanduser(
     "~/Library/LaunchAgents/%s.plist" % BUNDLE_ID)
@@ -2214,9 +2214,27 @@ def already_running():
     return any(int(a.processIdentifier()) != me for a in others)
 
 
+# Set by py2app's launcher for Flache's own bundled Python.  Applications
+# Flache opens inherit its environment, so a PYTHONHOME pointing into
+# Flache.app sends their Python (e.g. /usr/bin/python3) looking for its
+# standard library in the wrong place, and it dies at startup.
+PY2APP_ENVIRONMENT = ("RESOURCEPATH", "ARGVZERO", "EXECUTABLEPATH")
+
+
+def clean_launch_environment(env=None):
+    """Remove Flache's own Python settings from the environment that
+    launched applications inherit.  Flache's interpreter is already running
+    and no longer needs them."""
+    env = os.environ if env is None else env
+    for key in list(env):
+        if key.startswith("PYTHON") or key in PY2APP_ENVIRONMENT:
+            del env[key]
+
+
 def main():
     if already_running():
         sys.exit(0)
+    clean_launch_environment()
     app = NSApplication.sharedApplication()
     app.setActivationPolicy_(1)                 # accessory: no Dock icon
     delegate = FlacheApp.alloc().init()

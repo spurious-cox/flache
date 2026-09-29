@@ -190,6 +190,15 @@ def test_app_help():
               and os.path.isfile(page))
 
 
+def test_launch_environment():
+    env = {"PYTHONHOME": "/x", "PYTHONPATH": "/x", "RESOURCEPATH": "/x",
+           "ARGVZERO": "a", "EXECUTABLEPATH": "e", "HOME": "/Users/t",
+           "PATH": "/usr/bin"}
+    F.clean_launch_environment(env)
+    check("Python and py2app settings removed before launching apps",
+          env == {"HOME": "/Users/t", "PATH": "/usr/bin"})
+
+
 def test_reorder():
     def moved(src, at):
         apps = list("ABCD")
@@ -378,6 +387,7 @@ if __name__ == "__main__":
     test_app_list()
     test_recents()
     test_app_help()
+    test_launch_environment()
     test_reorder()
     test_add_dialog()
     test_chords()
