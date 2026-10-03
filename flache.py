@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Flache - a floating dock for the applications you choose - v1.7.4
+"""Flache - a floating dock for the applications you choose - v1.7.5
 
 Flache (pronounced "flash") is a small panel of application icons that
 floats above every window on every Space.  A click opens the application; a
@@ -75,7 +75,7 @@ from Foundation import (
 )
 
 APP_NAME = "Flache"
-APP_VERSION = "1.7.4"
+APP_VERSION = "1.7.5"
 BUNDLE_ID = "com.timmccoy.flache"
 AGENT_PLIST = os.path.expanduser(
     "~/Library/LaunchAgents/%s.plist" % BUNDLE_ID)
@@ -1661,6 +1661,17 @@ class AddPanelDelegate(NSObject,
                     os.path.realpath(path) in self.have)
 
 
+def icon_stamp(path):
+    """Changes whenever the app at `path` is replaced or its icon rewritten."""
+    try:
+        return os.stat(os.path.join(path, "Contents")).st_mtime_ns
+    except OSError:
+        try:
+            return os.stat(path).st_mtime_ns
+        except OSError:
+            return None
+
+
 class FlacheApp(NSObject):
 
     def applicationDidFinishLaunching_(self, note):
@@ -1840,12 +1851,16 @@ class FlacheApp(NSObject):
 
     def _iconAndInk_(self, entry):
         path = resolve(entry) or entry["path"]
+        # Cached per path AND the bundle's modification time, so an app that
+        # is rebuilt with a new icon is re-read instead of keeping the old
+        # image until Flache restarts.
+        stamp = icon_stamp(path)
         cached = self._icons.get(path)
-        if cached is None:
+        if cached is None or cached[2] != stamp:
             image = NSWorkspace.sharedWorkspace().iconForFile_(path)
-            cached = (image, ink_rect(image))
+            cached = (image, ink_rect(image), stamp)
             self._icons[path] = cached
-        return cached
+        return cached[:2]
 
     # -- the context menu -------------------------------------------------
 

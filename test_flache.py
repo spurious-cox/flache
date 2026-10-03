@@ -1,4 +1,4 @@
-"""Tests for Flache - v1.6.0
+"""Tests for Flache - v1.7.5
 
     ./venv/bin/python test_flache.py
 
@@ -353,6 +353,29 @@ def render(app, layout, dark):
     return out, bounds.size
 
 
+def test_icon_refresh():
+    """A rebuilt app's icon is re-read; an untouched one is served from cache."""
+    import shutil
+    import tempfile
+    NSApplication.sharedApplication()
+    app = F.FlacheApp.alloc().init()
+    app._icons = {}
+    tmp = tempfile.mkdtemp()
+    try:
+        bundle = os.path.join(tmp, "Fake.app")
+        os.makedirs(os.path.join(bundle, "Contents"))
+        entry = {"path": bundle, "bundle": "x.fake"}
+        first = app._iconAndInk_(entry)
+        check("untouched app keeps its cached icon", app._iconAndInk_(entry) is not None
+              and app._icons[bundle][0] is first[0])
+        stamp = app._icons[bundle][2]
+        os.utime(os.path.join(bundle, "Contents"), ns=(stamp + 5_000_000_000,) * 2)
+        app._iconAndInk_(entry)
+        check("a changed bundle is looked up again", app._icons[bundle][2] != stamp)
+    finally:
+        shutil.rmtree(tmp)
+
+
 def test_render():
     NSApplication.sharedApplication()
     app = F.FlacheApp.alloc().init()
@@ -394,6 +417,7 @@ if __name__ == "__main__":
     test_single_instance()
     test_help()
     test_panels()
+    test_icon_refresh()
     test_render()
     print("\n%d failed" % len(FAILED) if FAILED else "\nall passed")
     sys.exit(1 if FAILED else 0)

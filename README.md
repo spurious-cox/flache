@@ -1,4 +1,4 @@
-# Flache 1.7.4
+# Flache 1.7.5
 
 A floating dock for the applications you choose, for macOS.
 
