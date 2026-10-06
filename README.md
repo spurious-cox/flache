@@ -26,12 +26,14 @@ counts as a crash, and the login agent will bring the old copy straight back.
 
 * **Click** an icon to open the application, or bring it forward if it is
   already running. Flache never takes the focus from the app you are in.
-* **Right-click** for the application's own Help when it carries some (a
-  Read Me or a Help book), otherwise Flache Help, then Panels, Move to,
-  Copy to, New…, the three arrangements (Grid, Column and Strip), Hide
-  Flache, Recents (if
+* **Right-click an icon** for that application's own Help when it carries
+  some (a Read Me or a Help book), Move to, Copy to, New…, Recents (if
   available), Locate (shows the application in the Finder) and, at the
-  bottom, Delete.
+  bottom, Remove from Flache (the application itself is not touched). Nothing
+  on an icon's menu is about Flache itself.
+* **Right-click the empty space** (the gaps and the grips) for Flache Help,
+  Panels, the three arrangements (Grid, Column and Strip), Hide Flache and
+  New….
 * **Recents** are the same list the Dock shows; choose one to open it.
   They need Full Disk Access (below), and only applications that keep such
   a list have one.
@@ -45,7 +47,7 @@ counts as a crash, and the login agent will bring the old copy straight back.
 * An icon drawn **faded** is an application Flache can no longer find.
 
 The Old English F in the menu bar holds About Flache, Preferences…, Help…,
-Check for Updates…, Panels, Show/Hide Flache and Quit.
+Check for Updates…, Panels, Arrangement, Show/Hide Flache and Quit.
 
 ## Panels
 

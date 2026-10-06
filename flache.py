@@ -1,14 +1,17 @@
 #!/usr/bin/env python3
-"""Flache - a floating dock for the applications you choose - v1.7.5
+"""Flache - a floating dock for the applications you choose - v1.7.6
 
 Flache (pronounced "flash") is a small panel of application icons that
 floats above every window on every Space.  A click opens the application; a
-right-click offers the application's own Help when it carries some on
-disk (a Read Me or a Help book), Flache Help otherwise, the named panels,
-Move to, Copy to, New, the three arrangements (a horizontal strip, a
-vertical column or a square grid), Hide Flache, the application's recent documents (for applications
-that keep them, as the Dock shows them), Locate (the application in the
-Finder) and, last, Delete.  The whole panel is shown and hidden by one
+right-click on an icon offers that application's own Help when it carries
+some on disk (a Read Me or a Help book), Move to, Copy to, New, the
+application's recent documents (for applications that keep them, as the
+Dock shows them), Locate (the application in the Finder) and, last,
+Remove from Flache (which leaves the application itself alone).  Nothing on an icon's menu is about Flache itself: Flache Help, the
+named panels, the three arrangements (a horizontal strip, a vertical
+column or a square grid) and Hide Flache are on the menu of the panel's
+empty space (the gaps and the grips), and the menu bar item has the panels,
+the arrangements and Show/Hide.  The whole panel is shown and hidden by one
 system-wide chord, ⌃⌥⌘F unless another is recorded in Preferences, and it
 can be dragged anywhere; each arrangement remembers
 where it was left.  There can be several named panels, each with its own
@@ -75,7 +78,7 @@ from Foundation import (
 )
 
 APP_NAME = "Flache"
-APP_VERSION = "1.7.5"
+APP_VERSION = "1.7.6"
 BUNDLE_ID = "com.timmccoy.flache"
 AGENT_PLIST = os.path.expanduser(
     "~/Library/LaunchAgents/%s.plist" % BUNDLE_ID)
@@ -1171,8 +1174,8 @@ HELP_SECTIONS = [
         "already running.")),
     ("Showing and hiding it", (
         "Press %(hotkey)s from anywhere to show or hide Flache, or use "
-        "the Old English F in the menu bar. Right-click Flache and choose "
-        "Hide Flache to put it away with the mouse. The chord can be "
+        "the Old English F in the menu bar. Right-click the panel's empty "
+        "space and choose Hide Flache to put it away with the mouse. The chord can be "
         "changed in Preferences.")),
     ("Always ready", (
         "The key sequence works only while Flache is running. Turn on "
@@ -1182,17 +1185,18 @@ HELP_SECTIONS = [
         "until you next log in. Adding Flache to Login Items as well is "
         "harmless; only one copy ever runs.")),
     ("Adding and removing applications", (
-        "Right-click Flache and choose New… to pick applications; they go "
+        "Right-click an icon, or the panel's empty space, and choose New… to pick applications; they go "
         "in after the icon you right-clicked, and applications already in "
         "Flache are grayed out. You can also drag "
         "applications from the Finder straight onto Flache — a blue line "
         "shows where they will land. Right-click an icon and choose "
-        "Delete to take it out of Flache; the application itself is not "
+        "Remove from Flache to take it out; the application itself is not "
         "touched.")),
     ("Panels", (
         "Flache can keep several named panels, each with its own "
         "applications, arrangement and places, and shows one at a time. "
-        "Right-click Flache, or use the F in the menu bar, and choose a "
+        "Right-click the panel's empty space, or use the F in the menu bar, "
+        "and choose a "
         "name under Panels to swap it in; it appears where you last left "
         "it. New Panel… starts an empty one, and Rename… and Delete… act "
         "on the panel on screen. Deleting a panel only removes it from "
@@ -1200,9 +1204,10 @@ HELP_SECTIONS = [
         "icon and choose Move to or Copy to to put it in another panel; "
         "a panel that already has it is grayed out.")),
     ("Strip, column or grid", (
-        "Right-click and choose Strip for one row, Column for one column, "
-        "or Grid for a square block. Icon size (small, medium or large) is "
-        "in Preferences.")),
+        "Right-click the panel's empty space (the gaps and the grips), or "
+        "use Arrangement in the menu bar item, and choose Strip for one "
+        "row, Column for one column, or Grid for a square block. Icon size "
+        "(small, medium or large) is in Preferences.")),
     ("Rearranging the icons", (
         "Drag an icon to a new place; the icons part and a blue line shows "
         "where it will land. "
@@ -1217,8 +1222,9 @@ HELP_SECTIONS = [
     ("Help for an application", (
         "Right-click an icon: if that application carries its own help — a "
         "Read Me, or a Help book stored in the application — the first item "
-        "is that application's Help and opens it. Otherwise it is Flache "
-        "Help. The F in the menu bar always opens Flache's Help.")),
+        "is that application's Help and opens it; if it carries none there "
+        "is no help item. Flache's own Help is on the panel's empty space "
+        "menu and the F in the menu bar.")),
     ("Recents", (
         "Right-click an icon to see the documents that application opened "
         "recently, the same list the Dock shows; choose one to open it. "
@@ -1228,7 +1234,7 @@ HELP_SECTIONS = [
         "shows the application itself in the Finder.")),
     ("A faded icon", (
         "The application has been removed or moved somewhere Flache cannot "
-        "find it. Right-click it and choose Delete, then add the "
+        "find it. Right-click it and choose Remove from Flache, then add the "
         "application again.")),
 ]
 
@@ -1748,6 +1754,8 @@ class FlacheApp(NSObject):
         menu.addItem_(NSMenuItem.separatorItem())
         self.panels_item = _item("Panels", None, None)
         menu.addItem_(self.panels_item)
+        self.layout_item = _item("Arrangement", None, None)
+        menu.addItem_(self.layout_item)
         self.toggle_item = _item("Show Flache", "toggleFromMenu:", self)
         menu.addItem_(self.toggle_item)
         menu.addItem_(NSMenuItem.separatorItem())
@@ -1759,6 +1767,15 @@ class FlacheApp(NSObject):
         verb = "Hide" if self.panel.isVisible() else "Show"
         show_chord(self.toggle_item, "%s Flache" % verb, *current_hotkey())
         self.panels_item.setSubmenu_(self.panelsMenu())
+        arrangements = NSMenu.alloc().init()
+        arrangements.setAutoenablesItems_(False)
+        current = layout_pref()
+        for layout in ("grid", "column", "strip"):
+            entry = _item(layout.capitalize(), "chooseLayout:", self)
+            entry.setRepresentedObject_(layout)
+            entry.setState_(1 if layout == current else 0)
+            arrangements.addItem_(entry)
+        self.layout_item.setSubmenu_(arrangements)
 
     # -- hotkey -----------------------------------------------------------
 
@@ -1877,12 +1894,16 @@ class FlacheApp(NSObject):
                               "openAppHelp:", self)
             help_item.setRepresentedObject_(readme)
             menu.addItem_(help_item)
-        else:
+            menu.addItem_(NSMenuItem.separatorItem())
+        elif not present:
+            # An icon's menu is about that application and says nothing of
+            # Flache; the panel's empty space is where Flache's own help,
+            # panels, arrangements and Hide live.
             menu.addItem_(_item("Flache Help", "showHelp:", self))
-        panels = _item("Panels", None, None)
-        panels.setSubmenu_(self.panelsMenu())
-        menu.addItem_(panels)
-        menu.addItem_(NSMenuItem.separatorItem())
+            panels = _item("Panels", None, None)
+            panels.setSubmenu_(self.panelsMenu())
+            menu.addItem_(panels)
+            menu.addItem_(NSMenuItem.separatorItem())
 
         others = [p for p in panel_list() if p["name"] != current_panel()]
         for title, action in (("Move to", "moveAppToPanel:"),
@@ -1907,17 +1928,18 @@ class FlacheApp(NSObject):
         menu.addItem_(new)
         menu.addItem_(NSMenuItem.separatorItem())
 
-        current = layout_pref()
-        for layout in ("grid", "column", "strip"):
-            entry = _item(layout.capitalize(), "chooseLayout:", self)
-            entry.setRepresentedObject_(layout)
-            entry.setState_(1 if layout == current else 0)
-            menu.addItem_(entry)
-        menu.addItem_(NSMenuItem.separatorItem())
-        hide = _item("Hide Flache", "hidePanel:", self)
-        show_chord(hide, "Hide Flache", *current_hotkey())
-        menu.addItem_(hide)
-        menu.addItem_(NSMenuItem.separatorItem())
+        if not present:
+            current = layout_pref()
+            for layout in ("grid", "column", "strip"):
+                entry = _item(layout.capitalize(), "chooseLayout:", self)
+                entry.setRepresentedObject_(layout)
+                entry.setState_(1 if layout == current else 0)
+                menu.addItem_(entry)
+            menu.addItem_(NSMenuItem.separatorItem())
+            hide = _item("Hide Flache", "hidePanel:", self)
+            show_chord(hide, "Hide Flache", *current_hotkey())
+            menu.addItem_(hide)
+            menu.addItem_(NSMenuItem.separatorItem())
 
         # The application's recent documents, as the Dock lists them, then
         # Locate, which shows the application in the Finder.
@@ -1939,9 +1961,9 @@ class FlacheApp(NSObject):
         menu.addItem_(finder)
         # Last, and apart, so a slip of the pointer does not take an icon out.
         menu.addItem_(NSMenuItem.separatorItem())
-        title = ("Delete “%s”" % app_name(self.apps[index]["path"])
-                 if present else "Delete")
-        delete = _item(title, "deleteApp:", self)
+        # Named for what it does: it takes the icon off this panel and
+        # leaves the application alone, which "Delete" did not say.
+        delete = _item("Remove from Flache", "deleteApp:", self)
         delete.setEnabled_(present)
         if present:
             delete.setTag_(index)

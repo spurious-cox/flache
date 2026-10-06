@@ -376,6 +376,27 @@ def test_icon_refresh():
         shutil.rmtree(tmp)
 
 
+def test_menus():
+    """An icon's menu is about the application; Flache's own items are on the
+    empty space's menu, and the arrangements are in the menu bar too."""
+    NSApplication.sharedApplication()
+    app = F.FlacheApp.alloc().init()
+    app.apps = [{"path": "/System/Applications/Calculator.app", "bundle": ""}]
+    app._icons = {}
+    icon = [i.title() for i in app.menuForIndex_(0).itemArray()
+            if not i.isSeparatorItem()]
+    space = [i.title() for i in app.menuForIndex_(None).itemArray()
+             if not i.isSeparatorItem()]
+    for word in ("Flache Help", "Panels", "Grid", "Column", "Strip",
+                 "Hide Flache"):
+        check("an icon's menu has no %s" % word, word not in icon)
+        check("the empty space's menu has %s" % word, word in space)
+    for word in ("Move to", "Copy to", "New…", "Locate Calculator"):
+        check("an icon's menu keeps %s" % word, word in icon)
+    check("and Remove from Flache comes last",
+          icon[-1] == "Remove from Flache")
+
+
 def test_render():
     NSApplication.sharedApplication()
     app = F.FlacheApp.alloc().init()
@@ -418,6 +439,7 @@ if __name__ == "__main__":
     test_help()
     test_panels()
     test_icon_refresh()
+    test_menus()
     test_render()
     print("\n%d failed" % len(FAILED) if FAILED else "\nall passed")
     sys.exit(1 if FAILED else 0)
