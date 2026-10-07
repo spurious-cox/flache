@@ -397,6 +397,41 @@ def test_menus():
           icon[-1] == "Remove from Flache")
 
 
+def test_quiet_update():
+    """The check at launch: once a day, silent unless newer."""
+    store = {}
+    calls = []
+    saved = F.latest_release, F.APP_VERSION, F.defaults
+
+    class Fake(object):
+        def stringForKey_(self, k):
+            return store.get(k)
+
+        def setObject_forKey_(self, v, k):
+            store[k] = v
+
+    F.defaults = lambda: Fake()
+    try:
+        F.latest_release = lambda seconds=10: (
+            calls.append(seconds) or ["9.9.9", "page"])
+        F.APP_VERSION = "1.0.0"
+        line = F.quiet_update_line()
+        check("a newer release is reported with the brew line",
+              line.startswith("Update available: 9.9.9")
+              and "brew upgrade --cask flache" in line)
+        check("it gives up after three seconds", calls == [3])
+        F.quiet_update_line()
+        check("and asks only once a day", len(calls) == 1)
+        F.APP_VERSION = "9.9.9"
+        check("silent when this build is current", F.quiet_update_line() == "")
+        store.clear()
+        F.latest_release = lambda seconds=10: None
+        check("silent when GitHub cannot be reached",
+              F.quiet_update_line() == "")
+    finally:
+        F.latest_release, F.APP_VERSION, F.defaults = saved
+
+
 def test_render():
     NSApplication.sharedApplication()
     app = F.FlacheApp.alloc().init()
@@ -440,6 +475,7 @@ if __name__ == "__main__":
     test_panels()
     test_icon_refresh()
     test_menus()
+    test_quiet_update()
     test_render()
     print("\n%d failed" % len(FAILED) if FAILED else "\nall passed")
     sys.exit(1 if FAILED else 0)

@@ -17,3 +17,6 @@ icon/AppIcon.icon/
 
 # signed/notarized output
 *.dmg
+
+# generated from README.md by build.sh
+*-README.txt

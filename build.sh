@@ -56,6 +56,9 @@ echo "==> building the icon"
 
 echo "==> building"
 rm -rf build dist
+# The Help other launchers open from this app's icon: Flache-README.txt in
+# Resources, made from README.md so there is one source.
+/usr/bin/python3 "$HOME/My_Applications/_signing/pixpro_readme_txt.py" README.md Flache-README.txt
 ./venv/bin/python setup.py py2app >/dev/null
 
 # macOS 26+ draws an app that has only an .icns shrunk onto a plain plate.

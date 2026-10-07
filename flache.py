@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Flache - a floating dock for the applications you choose - v1.7.6
+"""Flache - a floating dock for the applications you choose - v1.8.0
 
 Flache (pronounced "flash") is a small panel of application icons that
 floats above every window on every Space.  A click opens the application; a
@@ -49,6 +49,7 @@ import re
 import subprocess
 import sys
 import threading
+import time
 import ctypes
 
 import objc
@@ -78,7 +79,7 @@ from Foundation import (
 )
 
 APP_NAME = "Flache"
-APP_VERSION = "1.7.6"
+APP_VERSION = "1.8.0"
 BUNDLE_ID = "com.timmccoy.flache"
 AGENT_PLIST = os.path.expanduser(
     "~/Library/LaunchAgents/%s.plist" % BUNDLE_ID)
@@ -92,6 +93,8 @@ DEF_VISIBLE = "FlacheVisible"
 DEF_TOP_LEFT = "FlacheTopLeft-"          # + layout
 DEF_PANEL = "FlachePanel"
 DEF_PANELS = "FlachePanels"
+DEF_UPDATE_DAY = "FlacheUpdateCheckedOn"   # the day the quiet check last asked
+DEF_UPDATE_TAG = "FlacheUpdateLatestTag"   # what it found
 FIRST_PANEL = "PixPro"                   # the name the original panel gets
 
 LAYOUTS = ("strip", "column", "grid")
@@ -1552,7 +1555,7 @@ RELEASES_PAGE = "https://github.com/spurious-cox/flache/releases/latest"
 CASK = "spurious-cox/tap/flache"
 
 
-def latest_release():
+def latest_release(seconds=10):
     """(version, page url) of the newest published release, or None when
     GitHub cannot be reached or answers with something unexpected.
 
@@ -1561,9 +1564,9 @@ def latest_release():
     """
     try:
         out = subprocess.run(
-            ["/usr/bin/curl", "-sfL", "--max-time", "10",
+            ["/usr/bin/curl", "-sfL", "--max-time", str(seconds),
              "-H", "Accept: application/vnd.github+json", RELEASES_API],
-            capture_output=True, timeout=15, check=True).stdout
+            capture_output=True, timeout=seconds + 5, check=True).stdout
         data = json.loads(out)
         return [str(data["tag_name"]).lstrip("v"),
                 str(data.get("html_url") or RELEASES_PAGE)]
@@ -1574,6 +1577,29 @@ def latest_release():
 
 def version_tuple(text):
     return tuple(int(part) for part in re.findall(r"\d+", str(text)))
+
+
+def quiet_update_line():
+    """"Update available: X.Y.Z - brew upgrade --cask flache", or "".
+
+    The check every PixPro app makes when it opens: asked at most once a day
+    (the answer is kept in preferences), three seconds at the longest, and
+    silent when this build is current or GitHub cannot be reached.
+    """
+    today = time.strftime("%Y-%m-%d")
+    store = defaults()
+    if str(store.stringForKey_(DEF_UPDATE_DAY) or "") == today:
+        tag = str(store.stringForKey_(DEF_UPDATE_TAG) or "")
+    else:
+        found = latest_release(3)
+        if not found:
+            return ""
+        tag = found[0]
+        store.setObject_forKey_(tag, DEF_UPDATE_TAG)
+        store.setObject_forKey_(today, DEF_UPDATE_DAY)
+    if not tag or version_tuple(tag) <= version_tuple(APP_VERSION):
+        return ""
+    return "Update available: %s  \u2014  brew upgrade --cask flache" % tag
 
 
 def update_alert(found):
@@ -1687,6 +1713,7 @@ class FlacheApp(NSObject):
         self.prefs = None
         self._buildPanel()
         self._buildStatusItem()
+        self.checkQuietly()
         self.hotkey = HotKey(self.toggle)
         if not self.applyHotkey():
             # Say so, rather than leave a chord that silently does nothing.
@@ -1747,6 +1774,14 @@ class FlacheApp(NSObject):
         menu = NSMenu.alloc().init()
         menu.setAutoenablesItems_(False)
         menu.setDelegate_(self)
+        # Hidden until the quiet check at launch finds something newer; then
+        # it is the first line of the menu.
+        self.update_item = _item("", "openRelease:", self)
+        self.update_item.setHidden_(True)
+        menu.addItem_(self.update_item)
+        self.update_rule = NSMenuItem.separatorItem()
+        self.update_rule.setHidden_(True)
+        menu.addItem_(self.update_rule)
         menu.addItem_(_item("About Flache", "about:", self))
         menu.addItem_(_item("Preferences…", "showPrefs:", self))
         menu.addItem_(_item("Help…", "showHelp:", self))
@@ -2156,6 +2191,24 @@ class FlacheApp(NSObject):
                 {NSFontAttributeName: NSFont.systemFontOfSize_(11),
                  NSForegroundColorAttributeName: NSColor.labelColor()}),
         })
+
+    def checkQuietly(self):
+        """Once, in the background, when the app starts. See quiet_update_line."""
+        def work():
+            line = quiet_update_line()
+            if line:
+                self.performSelectorOnMainThread_withObject_waitUntilDone_(
+                    "showUpdateLine:", line, False)
+        threading.Thread(target=work, daemon=True).start()
+
+    def showUpdateLine_(self, line):
+        self.update_item.setTitle_(line)
+        self.update_item.setHidden_(False)
+        self.update_rule.setHidden_(False)
+
+    def openRelease_(self, sender):
+        NSWorkspace.sharedWorkspace().openURL_(
+            NSURL.URLWithString_(RELEASES_PAGE))
 
     def checkUpdates_(self, sender):
         # The request can take seconds on a slow network; the panel stays

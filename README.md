@@ -47,7 +47,8 @@ counts as a crash, and the login agent will bring the old copy straight back.
 * An icon drawn **faded** is an application Flache can no longer find.
 
 The Old English F in the menu bar holds About Flache, Preferences…, Help…,
-Check for Updates…, Panels, Arrangement, Show/Hide Flache and Quit.
+Check for Updates…, Panels, Arrangement, Show/Hide Flache and Quit, with an
+"Update available" line on top when there is a newer release.
 
 ## Panels
 
@@ -74,6 +75,18 @@ Access** (System Settings → Privacy & Security → Full Disk Access) allows
 **Recents** in the right-click menu, if available: the documents that
 application opened recently, which macOS protects. Without it everything
 else works and the menu has no Recents.
+
+## Updates
+
+When Flache starts it asks GitHub whether a newer release exists — at most
+once a day, giving up after three seconds — and says nothing if you are up to
+date or offline. If there is a newer one, the top of the menu bar item's menu
+says:
+
+    Update available: X.Y.Z  —  brew upgrade --cask flache
+
+and choosing it opens the release page. **Check for Updates…** asks on demand.
+It only ever reports: nothing is downloaded and nothing replaces itself.
 
 ## Building
 

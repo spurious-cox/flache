@@ -16,7 +16,9 @@ from setuptools import setup
 APP = ["flache.py"]
 # The menu bar mark ships as a PNG so the app does not depend on the
 # "Olde English" font being installed on the machine running it.
-DATA_FILES = [("", ["icon/Flache_glyph.png"])]
+# Flache-README.txt is made from README.md by build.sh; it is the Help that
+# other launchers (and Flache itself) can open from this app's icon.
+DATA_FILES = [("", ["icon/Flache_glyph.png", "Flache-README.txt"])]
 
 
 def app_version():
