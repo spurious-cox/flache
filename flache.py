@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Flache - a floating dock for the applications you choose - v1.8.0
+"""Flache - a floating dock for the applications you choose - v1.9.0
 
 Flache (pronounced "flash") is a small panel of application icons that
 floats above every window on every Space.  A click opens the application; a
@@ -61,7 +61,7 @@ from AppKit import (
     NSEventModifierFlagOption, NSEventModifierFlagShift, NSFont, NSImage,
     NSMenu, NSMenuItem, NSOpenPanel, NSPanel, NSPasteboardTypeFileURL,
     NSPopUpButton, NSRunningApplication, NSScreen, NSScrollView, NSStatusBar, NSTextField,
-    NSTextView, NSVariableStatusItemLength, NSView, NSVisualEffectView,
+    NSTextView, NSTrackingArea, NSVariableStatusItemLength, NSView, NSVisualEffectView,
     NSWindowCollectionBehaviorCanJoinAllSpaces,
     NSWindowCollectionBehaviorFullScreenAuxiliary,
     NSWindowCollectionBehaviorStationary, NSWindowStyleMaskBorderless,
@@ -79,7 +79,7 @@ from Foundation import (
 )
 
 APP_NAME = "Flache"
-APP_VERSION = "1.8.0"
+APP_VERSION = "1.9.0"
 BUNDLE_ID = "com.timmccoy.flache"
 AGENT_PLIST = os.path.expanduser(
     "~/Library/LaunchAgents/%s.plist" % BUNDLE_ID)
@@ -850,6 +850,9 @@ def ink_rect(image):
     return NSMakeRect(x * k, y * k, side * k, side * k)
 
 
+_hover_panel = None                    # the label shown over a hovered icon
+
+
 class DockView(NSView):
     """Every icon, drawn by one view.  A press that moves the pointer less
     than DRAG_SLOP is a click.  One that moves further drags: an icon is
@@ -869,11 +872,102 @@ class DockView(NSView):
         self._dragging = False
         self._moving = None                # index of the icon being carried
         self._cursor = None                # where it is, in view coordinates
+        self._hoverIndex = None            # the icon the pointer rests on
+        self._track = None
         self.registerForDraggedTypes_([NSPasteboardTypeFileURL])
         return self
 
     def isFlipped(self):
         return True
+
+    # -- hover: the application's name -------------------------------------
+    # The system tooltip never appears for this panel (it is non-activating
+    # and the application is an accessory), so the label is drawn by Flache:
+    # a small panel shown beside the icon once the pointer has rested on it.
+
+    HOVER_DELAY = 0.5
+
+    def updateTrackingAreas(self):
+        objc.super(DockView, self).updateTrackingAreas()
+        if getattr(self, "_track", None) is not None:
+            self.removeTrackingArea_(self._track)
+        # MouseEnteredAndExited | MouseMoved | ActiveAlways | InVisibleRect
+        self._track = NSTrackingArea.alloc().\
+            initWithRect_options_owner_userInfo_(
+                self.bounds(), 0x01 | 0x02 | 0x80 | 0x200, self, None)
+        self.addTrackingArea_(self._track)
+
+    def mouseMoved_(self, event):
+        index = self._indexForEvent_(event)
+        count = len(self.controller.apps) if self.controller else 0
+        if index is not None and index >= count:
+            index = None
+        if index == self._hoverIndex:
+            return
+        self._hoverIndex = index
+        self._hideHover()
+        if index is not None and not self._dragging:
+            self.performSelector_withObject_afterDelay_(
+                "showHover:", None, self.HOVER_DELAY)
+
+    def mouseExited_(self, event):
+        self._hoverIndex = None
+        self._hideHover()
+
+    def _hideHover(self):
+        NSObject.cancelPreviousPerformRequestsWithTarget_selector_object_(
+            self, "showHover:", None)
+        global _hover_panel
+        if _hover_panel is not None:
+            _hover_panel.orderOut_(None)
+
+    def showHover_(self, _):
+        ctrl, index = self.controller, self._hoverIndex
+        if ctrl is None or index is None or index >= len(ctrl.apps) \
+                or self._dragging or self.window() is None:
+            return
+        text = app_name(str(ctrl.apps[index]["path"]))
+        global _hover_panel
+        if _hover_panel is None:
+            _hover_panel = NSPanel.alloc().\
+                initWithContentRect_styleMask_backing_defer_(
+                    NSMakeRect(0, 0, 10, 10),
+                    NSWindowStyleMaskBorderless |
+                    NSWindowStyleMaskNonactivatingPanel,
+                    NSBackingStoreBuffered, False)
+            _hover_panel.setLevel_(NSFloatingWindowLevel + 1)
+            _hover_panel.setIgnoresMouseEvents_(True)
+            _hover_panel.setHasShadow_(True)
+            _hover_panel.setHidesOnDeactivate_(False)
+            _hover_panel.setCollectionBehavior_(
+                NSWindowCollectionBehaviorCanJoinAllSpaces |
+                NSWindowCollectionBehaviorFullScreenAuxiliary |
+                NSWindowCollectionBehaviorStationary)
+        field = NSTextField.labelWithString_(text)
+        field.setFont_(NSFont.systemFontOfSize_(12))
+        field.sizeToFit()
+        w, h = field.frame().size.width + 16, field.frame().size.height + 8
+        box = NSVisualEffectView.alloc().initWithFrame_(NSMakeRect(0, 0, w, h))
+        box.setMaterial_(6)
+        box.setBlendingMode_(0)
+        box.setState_(1)
+        box.setMaskImage_(rounded_mask(6))
+        field.setFrameOrigin_((8, 4))
+        box.addSubview_(field)
+        _hover_panel.setContentView_(box)
+        layout, icon, count = layout_pref(), icon_px(), len(ctrl.apps)
+        x, y, c, _ = cell_rect(index, count, layout, icon, None)
+        local = self.convertRect_toView_(NSMakeRect(x, y, c, c), None)
+        spot = self.window().convertRectToScreen_(local)
+        screen = (self.window().screen() or NSScreen.mainScreen()).visibleFrame()
+        left = spot.origin.x + (spot.size.width - w) / 2.0
+        left = max(screen.origin.x + 4,
+                   min(left, screen.origin.x + screen.size.width - w - 4))
+        below = spot.origin.y - h - 4
+        top = below if below >= screen.origin.y else \
+            spot.origin.y + spot.size.height + 4
+        _hover_panel.setFrame_display_(NSMakeRect(left, top, w, h), True)
+        _hover_panel.orderFrontRegardless()
 
     def acceptsFirstMouse_(self, event):
         # The panel never becomes key, so every click is a "first" click.
@@ -1006,6 +1100,7 @@ class DockView(NSView):
         if event.modifierFlags() & NSEventModifierFlagControl:
             self.rightMouseDown_(event)
             return
+        self._hideHover()
         self._pressed = self._indexForEvent_(event)
         self._start = NSEvent.mouseLocation()
         frame = self.window().frame()
