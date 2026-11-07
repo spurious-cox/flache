@@ -60,6 +60,8 @@ one; **Rename…** and **Delete…** act on the panel on screen. Right-click an
 icon and choose **Move to** or **Copy to** to put it in another panel. Icon
 size and the show/hide keys are shared by every panel.
 
+![Example panels: Graphics, PixPro, Shawn and Extra, as grids, a column and strips](docs/panels-examples.jpg)
+
 ## Preferences
 
 * **Show / hide** — record any key sequence with at least one of ⌃ ⌥ ⌘.
