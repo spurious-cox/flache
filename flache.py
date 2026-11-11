@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Flache - a floating dock for the applications you choose - v1.10.0
+"""Flache - a floating dock for the applications you choose - v1.10.1
 
 Flache (pronounced "flash") is a small panel of application icons that
 floats above every window on every Space.  A click opens the application; a
@@ -79,7 +79,7 @@ from Foundation import (
 )
 
 APP_NAME = "Flache"
-APP_VERSION = "1.10.0"
+APP_VERSION = "1.10.1"
 BUNDLE_ID = "com.timmccoy.flache"
 AGENT_PLIST = os.path.expanduser(
     "~/Library/LaunchAgents/%s.plist" % BUNDLE_ID)
