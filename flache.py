@@ -70,7 +70,7 @@ from AppKit import (
     NSWindowStyleMaskUtilityWindow, NSWorkspace, NSWorkspaceOpenConfiguration,
     NSFloatingWindowLevel, NSFontAttributeName, NSForegroundColorAttributeName,
     NSAttributedString, NSMutableAttributedString, NSParagraphStyleAttributeName,
-    NSMutableParagraphStyle, NSEdgeInsetsMake,
+    NSMutableParagraphStyle, NSEdgeInsetsMake, NSSlider,
 )
 from Foundation import (
     NSBundle, NSData, NSFileManager, NSKeyedUnarchiver, NSMakePoint,
@@ -92,6 +92,8 @@ DEF_HOTKEY_MODS = "FlacheHotKeyMods"
 DEF_VISIBLE = "FlacheVisible"
 DEF_TOP_LEFT = "FlacheTopLeft-"          # + layout
 DEF_PANEL = "FlachePanel"
+DEF_BG = "FlacheBackground"            # "" = system material, "none", or a name in BG_COLORS
+DEF_BG_SHADE = "FlacheBackgroundShade"   # -100 darker .. 0 as chosen .. +100 lighter
 DEF_PANELS = "FlachePanels"
 DEF_UPDATE_DAY = "FlacheUpdateCheckedOn"   # the day the quiet check last asked
 DEF_UPDATE_TAG = "FlacheUpdateLatestTag"   # what it found
@@ -115,6 +117,8 @@ DEFAULTS = {
     DEF_HOTKEY_CODE: DEFAULT_HOTKEY[0],
     DEF_HOTKEY_MODS: DEFAULT_HOTKEY[1],
     DEF_VISIBLE: True,
+    DEF_BG: "",
+    DEF_BG_SHADE: 0,
 }
 
 CELL_PAD = 2              # around each icon, inside its cell
@@ -143,6 +147,56 @@ def set_pref(key, value):
 def layout_pref():
     value = str(pref(DEF_LAYOUT))
     return value if value in LAYOUTS else "strip"
+
+
+BG_COLORS = (
+    ("black", "Black", (0.0, 0.0, 0.0)),
+    ("white", "White", (1.0, 1.0, 1.0)),
+    ("gray", "Gray", (0.5, 0.5, 0.5)),
+    ("red", "Red", (0.85, 0.2, 0.2)),
+    ("orange", "Orange", (0.95, 0.6, 0.15)),
+    ("yellow", "Yellow", (0.98, 0.9, 0.3)),
+    ("green", "Green", (0.25, 0.7, 0.3)),
+    ("blue", "Blue", (0.2, 0.4, 0.85)),
+)
+
+
+def bg_is_clear():
+    return str(pref(DEF_BG)) == "none"
+
+
+def bg_base_rgb(name):
+    """The (r, g, b) a background choice stands for, or None: a basic colour
+    by name, or "rgb:r,g,b" for a colour that has been shaded and kept."""
+    if name.startswith("rgb:"):
+        try:
+            r, g, b = [float(x) for x in name[4:].split(",")]
+            return (r, g, b)
+        except ValueError:
+            return None
+    for key, _label, rgb in BG_COLORS:
+        if key == name:
+            return rgb
+    return None
+
+
+def shade_rgb(rgb, shade):
+    """Toward black for a negative shade, toward white for a positive one."""
+    t = max(-100, min(100, int(shade))) / 100.0
+    r, g, b = rgb
+    if t < 0:
+        return (r * (1 + t), g * (1 + t), b * (1 + t))
+    return (r + (1 - r) * t, g + (1 - g) * t, b + (1 - b) * t)
+
+
+def bg_color():
+    """The panel's chosen colour with its shade, or None for the system
+    material (and for "none", which draws nothing)."""
+    rgb = bg_base_rgb(str(pref(DEF_BG)))
+    if rgb is None:
+        return None
+    r, g, b = shade_rgb(rgb, pref(DEF_BG_SHADE))
+    return NSColor.colorWithSRGBRed_green_blue_alpha_(r, g, b, 1.0)
 
 
 def icon_px():
@@ -1399,7 +1453,7 @@ PREFS_W = 440
 FIELD_X = 130
 ROW_H = 34
 TOP_PAD = 18
-BOTTOM_PAD = 36
+BOTTOM_PAD = 60
 
 
 def _right_label(text, y, width=FIELD_X - 30):
@@ -1427,7 +1481,12 @@ def _popup(titles, y, target, action):
 
 
 class PrefsController(NSObject):
-    """Chord, arrangement, icon size and login item, in one small panel."""
+    """Chord, arrangement, icon size, background and login item, in one
+    small panel.  Arrangement, icon size and background apply as you choose
+    them, so the panel on screen is the preview; Save keeps them and Cancel
+    (or Esc, or the close button) puts everything back."""
+
+    DISPLAY_KEYS = (DEF_LAYOUT, DEF_ICON_SIZE, DEF_BG, DEF_BG_SHADE)
 
     def initWithApp_(self, app):
         self = objc.super(PrefsController, self).init()
@@ -1435,11 +1494,15 @@ class PrefsController(NSObject):
             return None
         self.app = app
         self._monitor = None
+        self._chord = None       # recorded but not yet saved
+        self._snapshot = None
+        self._saved = True
+        self._bg_name = ""
         self._build()
         return self
 
     def _build(self):
-        rows = 4
+        rows = 8
         height = TOP_PAD + rows * ROW_H + BOTTOM_PAD
         panel = NSPanel.alloc().initWithContentRect_styleMask_backing_defer_(
             NSMakeRect(0, 0, PREFS_W, height),
@@ -1447,6 +1510,7 @@ class PrefsController(NSObject):
             NSWindowStyleMaskUtilityWindow,
             NSBackingStoreBuffered, False)
         panel.setTitle_("Flache Preferences")
+        panel.setDelegate_(self)
         panel.setReleasedWhenClosed_(False)
         # An accessory app stops being active at the slightest provocation,
         # and NSPanel hides itself whenever its app is not active.
@@ -1477,35 +1541,163 @@ class PrefsController(NSObject):
                                 self, "sizeChanged:")
         view.addSubview_(self.size_menu)
 
+        view.addSubview_(_right_label("Background:", row(3) + 4))
+        # 3 x 3 swatches: the eight colours round the edge, "none"
+        # (transparent) in the middle; System is a button of its own.
+        self.bg_swatches = {}
+        layout = ["black", "white", "gray",
+                  "red", "none", "orange",
+                  "yellow", "green", "blue"]
+        names = dict((k, l) for k, l, _c in BG_COLORS)
+        rgbs = dict((k, c3) for k, _l, c3 in BG_COLORS)
+        for n, name in enumerate(layout):
+            r, c = divmod(n, 3)
+            b = NSButton.alloc().initWithFrame_(
+                NSMakeRect(FIELD_X + c * 36, row(3 + r) + 4, 28, 28))
+            b.setBordered_(False)
+            b.setWantsLayer_(True)
+            b.setTitle_("")
+            b.setTarget_(self)
+            b.setAction_("pickSwatch:")
+            b.setToolTip_("None (transparent)" if name == "none"
+                          else names[name])
+            layer = b.layer()
+            layer.setCornerRadius_(5)
+            if name == "none":
+                # A red X: no colour at all.
+                para = NSMutableParagraphStyle.alloc().init()
+                para.setAlignment_(1)
+                b.setAttributedTitle_(
+                    NSAttributedString.alloc().initWithString_attributes_(
+                        "\u2715", {
+                            NSForegroundColorAttributeName:
+                                NSColor.systemRedColor(),
+                            NSFontAttributeName:
+                                NSFont.boldSystemFontOfSize_(18),
+                            NSParagraphStyleAttributeName: para}))
+            else:
+                rgb = rgbs[name]
+                layer.setBackgroundColor_(
+                    NSColor.colorWithSRGBRed_green_blue_alpha_(
+                        rgb[0], rgb[1], rgb[2], 1.0).CGColor())
+            self.bg_swatches[name] = b
+            view.addSubview_(b)
+        self.bg_system = NSButton.alloc().initWithFrame_(
+            NSMakeRect(FIELD_X + 3 * 36 + 12, row(4) + 4, 120, 26))
+        self.bg_system.setTitle_("System color")
+        self.bg_system.setBezelStyle_(1)
+        self.bg_system.setTarget_(self)
+        self.bg_system.setAction_("pickSwatch:")
+        view.addSubview_(self.bg_system)
+
+        view.addSubview_(_right_label("Shade:", row(6) + 6))
+        self.bg_shade = NSSlider.alloc().initWithFrame_(
+            NSMakeRect(FIELD_X, row(6) + 4, 176, 22))
+        self.bg_shade.setMinValue_(-100)
+        self.bg_shade.setMaxValue_(100)
+        self.bg_shade.setContinuous_(True)
+        self.bg_shade.setTarget_(self)
+        self.bg_shade.setAction_("pickBackground:")
+        view.addSubview_(self.bg_shade)
+        view.addSubview_(_plain("darker \u2194 lighter", FIELD_X + 184,
+                                row(6) + 6, 120))
+
         self.login_item = NSButton.alloc().initWithFrame_(
-            NSMakeRect(FIELD_X, row(3) + 6, 280, 20))
+            NSMakeRect(FIELD_X, row(7) + 6, 280, 20))
         self.login_item.setButtonType_(3)        # switch
         self.login_item.setTitle_("Open Flache at login")
-        self.login_item.setTarget_(self)
-        self.login_item.setAction_("loginItemChanged:")
         view.addSubview_(self.login_item)
 
-        version = _plain("Flache %s" % APP_VERSION, PREFS_W - 130, 12, 112)
-        version.setAlignment_(1)
+        version = _plain("Flache %s" % APP_VERSION, 20, 22, 112)
         view.addSubview_(version)
+
+        self.save_button = NSButton.alloc().initWithFrame_(
+            NSMakeRect(PREFS_W - 20 - 84, 14, 84, 30))
+        self.save_button.setTitle_("Save")
+        self.save_button.setBezelStyle_(1)
+        self.save_button.setKeyEquivalent_("\r")
+        self.save_button.setTarget_(self)
+        self.save_button.setAction_("save:")
+        view.addSubview_(self.save_button)
+        self.cancel_button = NSButton.alloc().initWithFrame_(
+            NSMakeRect(PREFS_W - 20 - 84 - 92, 14, 84, 30))
+        self.cancel_button.setTitle_("Cancel")
+        self.cancel_button.setBezelStyle_(1)
+        self.cancel_button.setKeyEquivalent_("\x1b")
+        self.cancel_button.setTarget_(self)
+        self.cancel_button.setAction_("cancel:")
+        view.addSubview_(self.cancel_button)
         self.panel = panel
 
     def show(self):
+        self._chord = None
+        self._saved = False
+        # What the panel looked like on the way in: Cancel and the close
+        # button put it back, since the display settings apply as you go.
+        self._snapshot = {k: defaults().objectForKey_(k)
+                          for k in self.DISPLAY_KEYS}
+        # A shade already applied becomes the colour itself, and the slider
+        # shades from there, so it always starts at zero.
+        rgb = bg_base_rgb(str(pref(DEF_BG)))
+        if rgb is not None and int(pref(DEF_BG_SHADE)) != 0:
+            r, g, b = shade_rgb(rgb, pref(DEF_BG_SHADE))
+            set_pref(DEF_BG, "rgb:%.4f,%.4f,%.4f" % (r, g, b))
+            set_pref(DEF_BG_SHADE, 0)
+        self.login_item.setState_(1 if os.path.exists(AGENT_PLIST) else 0)
         self.refresh()
         self.panel.center()
         NSApp.activateIgnoringOtherApps_(True)
         self.panel.makeKeyAndOrderFront_(None)
 
     def refresh(self):
-        self.hotkey_button.setTitle_(hotkey_label(*current_hotkey()))
+        self.hotkey_button.setTitle_(
+            hotkey_label(*(self._chord or current_hotkey())))
         self.layout_menu.selectItemAtIndex_(LAYOUTS.index(layout_pref()))
         self.size_menu.selectItemAtIndex_(
             ("small", "medium", "large").index(
                 str(pref(DEF_ICON_SIZE))
                 if str(pref(DEF_ICON_SIZE)) in ICON_SIZES else "medium"))
-        self.login_item.setState_(1 if os.path.exists(AGENT_PLIST) else 0)
+        if self._snapshot is None:
+            self.login_item.setState_(1 if os.path.exists(AGENT_PLIST) else 0)
+        self.bg_shade.setIntegerValue_(int(pref(DEF_BG_SHADE)))
+        self._selectBackground(str(pref(DEF_BG)))
+
+    @objc.python_method
+    def _selectBackground(self, name):
+        """Mark the chosen swatch (or System) and remember the choice."""
+        valid = ("", "none") + tuple(k for k, _l, _c in BG_COLORS)
+        kept = name.startswith("rgb:") and bg_base_rgb(name) is not None
+        self._bg_name = name if (name in valid or kept) else ""
+        for key, b in self.bg_swatches.items():
+            on = key == self._bg_name
+            b.layer().setBorderWidth_(3 if on else 1)
+            b.layer().setBorderColor_(
+                (NSColor.controlAccentColor() if on
+                 else NSColor.separatorColor()).CGColor())
+        self.bg_system.setState_(1 if self._bg_name == "" else 0)
+        self.bg_shade.setEnabled_(self._bg_name not in ("", "none"))
+
+    @objc.python_method
+    def _applyBackground(self):
+        set_pref(DEF_BG, self._bg_name)
+        set_pref(DEF_BG_SHADE, int(self.bg_shade.integerValue()))
+        self.app.applyBackground()
 
     # -- actions ----------------------------------------------------------
+
+    def pickSwatch_(self, sender):
+        name = ""
+        for key, b in self.bg_swatches.items():
+            if b is sender:
+                name = key
+        # A new colour starts fresh: the slider shades it from zero.
+        self.bg_shade.setIntegerValue_(0)
+        self._selectBackground(name)
+        self._applyBackground()
+
+    def pickBackground_(self, sender):
+        """The shade slider."""
+        self._applyBackground()
 
     def recordHotkey_(self, sender):
         if self._monitor is not None:
@@ -1526,14 +1718,12 @@ class PrefsController(NSObject):
                 problem = ("That chord is already taken",
                            "Another application has claimed %s. Choose a "
                            "different one." % hotkey_label(code, mods))
+            self.app.applyHotkey()               # back to the saved chord
             if problem is not None:
-                self.app.applyHotkey()           # back to the saved chord
                 self.refresh()
                 _alert(*problem)
                 return None
-            set_pref(DEF_HOTKEY_CODE, code)
-            set_pref(DEF_HOTKEY_MODS, mods)
-            self.app.applyHotkey()
+            self._chord = (code, mods)           # applied by Save
             self.refresh()
             return None
 
@@ -1549,11 +1739,40 @@ class PrefsController(NSObject):
         set_pref(DEF_ICON_SIZE, chosen)
         self.app.relayout()
 
-    def loginItemChanged_(self, sender):
-        if sender.state():
-            install_login_item()
-        else:
-            remove_login_item()
+    def save_(self, sender):
+        if self._chord is not None:
+            set_pref(DEF_HOTKEY_CODE, self._chord[0])
+            set_pref(DEF_HOTKEY_MODS, self._chord[1])
+            self.app.applyHotkey()
+        if bool(self.login_item.state()) != os.path.exists(AGENT_PLIST):
+            if self.login_item.state():
+                install_login_item()
+            else:
+                remove_login_item()
+        self._saved = True
+        self.panel.orderOut_(None)
+        self.windowWillClose_(None)
+
+    def cancel_(self, sender):
+        self.panel.performClose_(None)
+
+    def windowWillClose_(self, note):
+        # Closing by any route but Save puts back what applied as you went.
+        snap = self._snapshot
+        if snap is not None and not self._saved:
+            for k, v in snap.items():
+                if v is None:
+                    defaults().removeObjectForKey_(k)
+                else:
+                    defaults().setObject_forKey_(v, k)
+            self.app.relayout()
+            self.app.applyBackground()
+        self._snapshot = None
+        if self._monitor is not None:
+            NSEvent.removeMonitor_(self._monitor)
+            self._monitor = None
+            self.app.applyHotkey()
+        self._chord = None
         self.refresh()
 
 
@@ -1847,13 +2066,34 @@ class FlacheApp(NSObject):
         effect.setBlendingMode_(0)               # behind the window
         effect.setState_(1)                      # always active
         effect.setMaskImage_(rounded_mask(CORNER))
-        panel.setContentView_(effect)
+        effect.setAutoresizingMask_(18)
+        # A plain view holds the system material and, when a colour is
+        # chosen, a coloured layer of its own (see applyBackground).
+        holder = NSView.alloc().initWithFrame_(NSMakeRect(0, 0, 100, 100))
+        holder.setWantsLayer_(True)
+        holder.layer().setCornerRadius_(CORNER)
+        holder.addSubview_(effect)
+        panel.setContentView_(holder)
 
-        view = DockView.alloc().initWithFrame_(effect.bounds())
+        view = DockView.alloc().initWithFrame_(holder.bounds())
         view.controller = self
         view.setAutoresizingMask_(18)
-        effect.addSubview_(view)
+        holder.addSubview_(view)
         self.panel, self.view = panel, view
+        self.effect, self.holder = effect, holder
+        self.applyBackground()
+
+    def applyBackground(self):
+        """The system material, a chosen colour with its shade, or nothing
+        at all (the icons float)."""
+        color = bg_color()
+        self.effect.setHidden_(color is not None or bg_is_clear())
+        if color is None:
+            self.holder.layer().setBackgroundColor_(None)
+        else:
+            self.holder.layer().setBackgroundColor_(color.CGColor())
+        self.panel.invalidateShadow()
+        self.view.setNeedsDisplay_(True)
 
     def _buildStatusItem(self):
         item = NSStatusBar.systemStatusBar().statusItemWithLength_(
