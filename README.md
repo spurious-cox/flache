@@ -64,9 +64,16 @@ size and the show/hide keys are shared by every panel.
 
 ## Preferences
 
+Arrangement, icon size and background apply as you choose them, so the panel
+itself is the preview. **Save** keeps your choices; **Cancel**, Esc or the
+close button puts everything back.
+
 * **Show / hide** — record any key sequence with at least one of ⌃ ⌥ ⌘.
 * **Arrangement** — strip, column or grid.
 * **Icon size** — small, medium or large.
+* **Background** — the system material (the default), one of eight colours,
+  or none at all so the icons float. **Shade** makes a colour darker or
+  lighter.
 * **Open Flache at login** — starts Flache when you log in and restarts it
   if it ever stops unexpectedly, so the key sequence always works. Quit
   from the menu bar and it stays quit until you next log in. Only one copy
