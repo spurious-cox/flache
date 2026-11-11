@@ -397,6 +397,33 @@ def test_menus():
           icon[-1] == "Remove from Flache")
 
 
+def test_background():
+    """Shade moves a colour toward black or white; a kept colour reads back;
+    the preferences panel builds with its swatches and slider."""
+    check("shade 0 leaves a colour alone",
+          F.shade_rgb((0.2, 0.4, 0.8), 0) == (0.2, 0.4, 0.8))
+    check("shade -100 is black", F.shade_rgb((0.2, 0.4, 0.8), -100) == (0, 0, 0))
+    check("shade +100 is white", F.shade_rgb((0.2, 0.4, 0.8), 100) == (1, 1, 1))
+    check("shade -50 halves each channel",
+          F.shade_rgb((0.2, 0.4, 0.8), -50) == (0.1, 0.2, 0.4))
+    check("a basic colour is found by name", F.bg_base_rgb("red") is not None)
+    check("a kept colour reads back",
+          F.bg_base_rgb("rgb:0.1000,0.2000,0.3000") == (0.1, 0.2, 0.3))
+    check("a bad name is nothing", F.bg_base_rgb("plaid") is None)
+    check("a bad kept colour is nothing", F.bg_base_rgb("rgb:x,y,z") is None)
+    check("the system material is the default",
+          F.DEFAULTS[F.DEF_BG] == "" and F.DEFAULTS[F.DEF_BG_SHADE] == 0)
+    NSApplication.sharedApplication()
+    prefs = F.PrefsController.alloc().initWithApp_(None)
+    check("nine swatches and a System button",
+          len(prefs.bg_swatches) == 9 and prefs.bg_system is not None)
+    check("the shade slider spans -100 to 100",
+          prefs.bg_shade.minValue() == -100 and prefs.bg_shade.maxValue() == 100)
+    check("Save and Cancel exist",
+          prefs.save_button.title() == "Save"
+          and prefs.cancel_button.title() == "Cancel")
+
+
 def test_quiet_update():
     """The check at launch: once a day, silent unless newer."""
     store = {}
@@ -475,6 +502,7 @@ if __name__ == "__main__":
     test_panels()
     test_icon_refresh()
     test_menus()
+    test_background()
     test_quiet_update()
     test_render()
     print("\n%d failed" % len(FAILED) if FAILED else "\nall passed")
