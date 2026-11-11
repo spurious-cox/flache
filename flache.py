@@ -1067,9 +1067,25 @@ class DockView(NSView):
         """Two rows of dots across each grip, like a handle."""
         layout = layout_pref()
         size = self.bounds().size
-        NSColor.tertiaryLabelColor().set()
+        clear = bg_is_clear()
         step, dot = 5.0, 2.0
         for gx, gy, gw, gh in grip_rects(layout, size.width, size.height):
+            if clear:
+                # Nothing is behind the icons, so a transparent window passes
+                # clicks through; a black tab gives something to grab.
+                # A frosted pill with dark dots and a thin dark rim reads on
+                # light and dark screens alike: the pale fill shows on black,
+                # the dots and rim show on white.
+                pill = NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(
+                    NSMakeRect(gx + 1, gy + 1, gw - 2, gh - 2), 4, 4)
+                NSColor.colorWithWhite_alpha_(0.85, 0.55).set()
+                pill.fill()
+                NSColor.colorWithWhite_alpha_(0.0, 0.35).set()
+                pill.setLineWidth_(1.0)
+                pill.stroke()
+                NSColor.colorWithWhite_alpha_(0.1, 0.8).set()
+            else:
+                NSColor.tertiaryLabelColor().set()
             if layout == "strip":
                 span = min(gh - 2 * EDGE, 40.0)
                 mid = gx + gw / 2.0
