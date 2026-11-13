@@ -18,8 +18,6 @@ Applications. Or with Homebrew:
 **Updating: quit Flache first** (menu bar F → Quit Flache). Force-quitting
 counts as a crash, and the login agent will bring the old copy straight back.
 
-![Flache as a column, a strip and a grid](docs/panels.png)
-
     ⌃⌥⌘F        show or hide Flache
 
 ## Using it
